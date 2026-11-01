@@ -6,16 +6,25 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "build": "node scripts/build-vendor.js",
+    "cf:dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yangdahyee/sansa_fish.git"
   },
   "license": "UNLICENSED",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "three": "^0.187.0",
     "ws": "^8.22.1"
-  }
+  },
+  "devDependencies": {
+    "wrangler": "^4.156.0"
+  },
+  "type": "module"
 }

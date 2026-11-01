@@ -27,15 +27,23 @@
 5. **별** — 21번째 먹이가 들어오면 그 물고기가 폭포를 올라 등용문을 지나 용이 되어 별로. 내 소원이거나 내가 먹이를 준 소원이면 영화 같은 장면으로 함께 봅니다.
 6. **다시 왔을 때** — “없는 동안 3명이 내 소원에 먹이를 줬어요”, 없는 동안 별이 됐다면 그 장면을 다시 보여 줌
 
-## 서버 (`server.js`)
+## 서버
 
-- 소원은 `data/wishes.json`에 저장 (git 제외). 방문자는 브라우저가 만든 익명 아이디를 **해시로만** 보관합니다.
+규칙(소원 저장, 먹이 규칙, 별)은 **`core/pond.js` 한 곳**에 있고, 두 가지 방식으로 돌릴 수 있습니다.
+
+| | 내 컴퓨터 (`server.js`) | Cloudflare (`src/worker.js`) |
+|---|---|---|
+| 저장 | `data/wishes.json` 파일 | Durable Object 내장 저장소 (DB 불필요) |
+| 실시간 | `ws` | WebSocket Hibernation (조용할 땐 요금이 거의 안 듦) |
+| 정적 파일 | Node 가 직접 | Cloudflare 가 바로 (`public/`) |
+
+- 방문자는 브라우저가 만든 익명 아이디를 **해시로만** 보관합니다.
 - 한 사람당 헤엄치는 소원은 한 번에 하나, 별이 되면 새 소원을 띄울 수 있습니다.
 - REST: `GET /api/stats`, `GET /api/wishes?status=swimming|star&sort=mix|new|near|recent`, `GET /api/wishes?mine=1`, `GET /api/wishes/:id`, `POST /api/wishes`, `POST /api/wishes/:id/feed`
 - WebSocket(`/ws`)은 알림 전용: 새 소원·먹이·별·접속자 수
-- 별까지 먹이 수는 `WISH_GOAL` 환경 변수 (기본 21, 사람이 늘면 108)
+- 별까지 먹이 수는 `WISH_GOAL` (기본 21, 사람이 늘면 108). Cloudflare 는 `wrangler.jsonc` 의 `vars`
 
-## 실행
+## 실행 (내 컴퓨터)
 
 ```bash
 npm install
@@ -43,10 +51,37 @@ npm start
 # http://localhost:3000   (빨리 시험해 보려면 WISH_GOAL=3 npm start)
 ```
 
+Cloudflare 와 똑같은 환경으로 돌려 보려면 `npm run cf:dev` → http://localhost:8787
+
+## 배포 (Cloudflare Workers, 무료 요금제)
+
+**방법 A — 대시보드에서 GitHub 연결 (설치 없이)**
+1. https://dash.cloudflare.com 가입·로그인 (카드 등록 불필요)
+2. **Workers & Pages → Create → Import a repository** → GitHub 연결 → `sansa_fish` 선택
+3. 설정
+   - Project name: `wish-pond`
+   - Build command: `npm run build`
+   - Deploy command: `npx wrangler deploy`
+   - 브랜치: 배포할 브랜치 (보통 `main`)
+4. **Save and Deploy** → `https://wish-pond.<내 하위 도메인>.workers.dev` 주소가 생김. 이후 그 브랜치에 푸시할 때마다 자동 배포
+
+**방법 B — 내 컴퓨터에서 명령어로**
+```bash
+npm install
+npx wrangler login
+npm run deploy
+```
+
+> 무료 요금제는 한도를 넘으면 요금이 나가는 대신 그날 요청이 실패하고 다음 날 풀립니다. 결제 수단을 등록하거나 유료로 바꾸지 않으면 과금되지 않습니다.
+
 ## 구조
 
 ```
-server.js              정적 파일 + 소원 저장(REST) + 실시간 알림(WebSocket)
+core/pond.js           소원 규칙 (저장·먹이·별) — Node·Cloudflare 공용
+server.js              내 컴퓨터용 서버 (파일 저장 + ws)
+src/worker.js          Cloudflare Worker + Durable Object
+wrangler.jsonc         Cloudflare 설정
+scripts/build-vendor.js  three.js 필요한 파일만 public/vendor 로 복사 (배포 전)
 public/
   index.html, style.css
   js/main.js           화면 ↔ 3D 연못 ↔ 서버 (방생 의식, 소원 카드, 모아 보기, 별 장면)
@@ -91,39 +126,3 @@ public/
 - **벽·수면**: 가장자리는 미리 피하고, 닿으면 튕겨 나옵니다. 도약할 때만 수면을 넘습니다.
 - **도약**: 수면을 향해 차고 올라 → 공중에서는 중력만 받는 포물선 → 물에 떨어지면 저항으로 감속하고 부력으로 돌아옵니다.
 - **수초·연잎**: 수초는 끝으로 갈수록 가늘어지는 리본 잎 여러 장으로 된 포기(초록·올리브·청록, 가끔 붉은 해초)이고, 물살에 끝부분이 하늘거립니다. 지나가는 물고기에 밀려 휘었다가 돌아오고, 연잎은 밀려나며 들썩입니다. 수면 가까이 빠르게 지나가면 물결이 남습니다.
-
-## 실행
-
-```bash
-npm install
-npm start
-# http://localhost:3000
-```
-
-친구와 테스트하려면 같은 `?pond=` 링크를 두 브라우저에서 열어 보세요.
-
-## 구조
-
-```
-server.js              정적 파일 + WebSocket 연못 방 서버 (의존성: ws)
-public/
-  index.html, style.css
-  js/main.js           UI ↔ 연못 ↔ 네트워크 연결
-  js/world.js          Three.js 장면: 하늘, 연못, 등용문 폭포, 물고기 AI, 효과
-  js/net.js            WebSocket 클라이언트 (자동 재연결, 서버 없으면 혼자 모드)
-  js/store.js          내 꿈/할 일 (localStorage)
-  js/sound.js          WebAudio로 합성하는 물소리·풍경 소리 (파일 없음)
-  js/data.js           물고기 종류, 정해진 말, 무작위 이름
-  assets/fish/*.glb    물고기 3D 모델 4종 (스킨 애니메이션 포함)
-data/stars.json        연못별 등용 기록 (자동 생성, git 제외)
-```
-
-- 내 꿈과 할 일은 **브라우저에만** 저장됩니다. 서버는 현재 접속자의 공개 정보(이름, 물고기 종류, 공개한 꿈 문장, 진행도)만 중계하고, 등용한 꿈만 별로 기록합니다.
-- 다른 물고기의 위치는 동기화하지 않고 각자 화면에서 시뮬레이션합니다. 상태(진행도·잠·따라가기)와 사건(도약·먹이·말·등용)만 주고받아 가볍습니다.
-
-## 다음에 해볼 것
-
-- 할 일 마감일, 매일 반복하는 할 일
-- 계정/기기 간 동기화
-- 꿈 카테고리에 따른 무늬, 성장 단계별 지느러미
-- 연못별 계절·시간대 변화, 새벽/저녁 함께 헤엄치는 시간

@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wish-pond",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-10-01",
+  // 정적 파일은 public/ (배포 전 `npm run build` 가 three.js 를 public/vendor 로 복사)
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/ws"]
+  },
+  // 연못 하나 = Durable Object 하나 (SQLite 저장소 — 무료 요금제에서 사용 가능)
+  "durable_objects": {
+    "bindings": [{ "name": "POND", "class_name": "PondDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PondDO"] }],
+  "vars": {
+    // 별이 되기까지 필요한 먹이 수 (사람이 늘면 108 로)
+    "WISH_GOAL": "21"
+  },
+  "observability": { "enabled": true }
+}
