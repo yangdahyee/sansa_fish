@@ -16,10 +16,12 @@ let GOAL = 21;
 // 서버
 // ---------------------------------------------------------------------
 async function api(path, body) {
-  const sep = path.includes('?') ? '&' : '?';
-  const res = await fetch(body ? path : `${path}${sep}uid=${state.uid}`, {
+  // 방문자 아이디는 주소창이 아니라 헤더로 (서버 기록에 남지 않게)
+  const headers = { 'x-pond-uid': state.uid };
+  if (body) headers['content-type'] = 'application/json';
+  const res = await fetch(path, {
     method: body ? 'POST' : 'GET',
-    headers: body ? { 'content-type': 'application/json' } : undefined,
+    headers,
     body: body ? JSON.stringify({ uid: state.uid, ...body }) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -178,8 +180,9 @@ async function main() {
       $('myBadge').textContent = w.isPublic ? '소원 공개' : '마음속 소원';
       $('myText').textContent = w.text ? `“${w.text}”` : '🔒 마음속 소원';
       $('myFill').style.width = `${Math.min(100, (w.feeds / GOAL) * 100)}%`;
-      $('myLabel').textContent =
-        w.feeds === 0 ? `아직 먹이 0 / ${GOAL} — 링크를 보내 첫 응원을 받아 보세요` : `🍚 먹이 ${w.feeds} / ${GOAL} · ${GOAL - w.feeds}번 더 모이면 별이 돼요`;
+      $('myLabel').textContent = w.hidden
+        ? '🙈 신고가 들어와 잠시 숨겨졌어요. 관리자가 확인하면 다시 보여요'
+        : w.feeds === 0 ? `아직 먹이 0 / ${GOAL} — 링크를 보내 첫 응원을 받아 보세요` : `🍚 먹이 ${w.feeds} / ${GOAL} · ${GOAL - w.feeds}번 더 모이면 별이 돼요`;
     }
     $('myStars').hidden = myStars.length === 0;
     const ul = $('myStarList');
@@ -209,6 +212,10 @@ async function main() {
     b.hidden = star;
     b.disabled = w.mine || w.fedToday;
     b.textContent = w.mine ? '내 소원이에요' : w.fedToday ? '오늘 먹이를 줬어요 ✓' : '🍚 먹이 주며 응원하기';
+    const r = $('btnReport');
+    r.hidden = !!w.mine || !w.text;
+    r.disabled = !!w.reportedByMe;
+    r.textContent = w.reportedByMe ? '신고함' : '🚩 신고';
     b.title = w.fedToday ? '같은 소원에는 하루 한 번 — 내일 또 줄 수 있어요' : '';
     // 물고기 이름표를 잠깐 켜서 어떤 물고기인지 보이게
     for (const f of world.fishes.values()) if (f.data.highlight && f.id !== w.id) f.setData({ highlight: false });
@@ -261,6 +268,32 @@ async function main() {
     }
   }
   $('btnFeed').onclick = () => cardId && feedWish(cardId);
+
+  // ---------- 신고 ----------
+  $('btnReport').onclick = async () => {
+    const id = cardId;
+    if (!id) return;
+    if (!confirm('이 소원을 신고할까요?\n욕설·광고·개인정보처럼 연못에 어울리지 않는 글이면 알려 주세요.\n여러 명이 신고하면 자동으로 숨겨지고, 관리자가 확인해요.')) return;
+    try {
+      await api(`/api/wishes/${id}/report`, {});
+      const w = wishes.get(id);
+      if (w) w.reportedByMe = true;
+      toast('신고했어요. 알려 주셔서 고마워요 🙏');
+      if (cardId === id && w) openCard(w);
+    } catch (e) {
+      toast(e.code === 'too_many' ? '잠시 뒤 다시 해 주세요' : '신고하지 못했어요');
+    }
+  };
+
+  // 숨겨지거나 지워진 소원은 연못·하늘에서 내림
+  function dropWish(id) {
+    wishes.delete(id);
+    if (world.getFish(id) && !world.getFish(id).action) world.removeFish(id);
+    const s = world.dreamStars.children.find((x) => x.userData.star?.id === id);
+    if (s) world.dreamStars.remove(s);
+    if (cardId === id) closeCard();
+    if (myWish?.id === id) loadMine().catch(() => {});
+  }
 
   // ---------- 별이 될 때 ----------
   const starred = new Set();
@@ -443,7 +476,9 @@ async function main() {
       if (e.code === 'already_swimming') {
         toast('이미 헤엄치는 소원이 있어요. 별이 되면 새 소원을 띄울 수 있어요');
         await loadMine();
-      } else if (e.code === 'too_many') toast('잠시 뒤에 다시 방생해 주세요');
+      } else if (e.code === 'blocked_word') toast('연못에 어울리지 않는 말이 있어요. 소원을 고쳐 적어 주세요');
+      else if (e.code === 'blocked_link') toast('링크·전화번호·이메일은 소원에 적을 수 없어요');
+      else if (e.code === 'too_many') toast('잠시 뒤에 다시 방생해 주세요');
       else toast('방생하지 못했어요. 잠시 뒤 다시 해 주세요');
     }
   }
@@ -649,6 +684,7 @@ async function main() {
     }
     if (cardId === id) openCard(w);
   });
+  live.on('wish:hide', ({ id }) => dropWish(id));
   live.on('wish:star', ({ wish }) => {
     const known = wishes.get(wish.id);
     onStar({ ...known, ...wish, mine: known?.mine || myWish?.id === wish.id });

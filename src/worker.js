@@ -22,6 +22,9 @@ export class PondDO extends DurableObject {
       goal: Number(env.WISH_GOAL) || 21,
       // 소원 하나 = 저장소 항목 하나 (Durable Object 내장 저장소, 따로 DB 필요 없음)
       persist: (w) => ctx.storage.put(`w:${w.id}`, w),
+      remove: (w) => ctx.storage.delete(`w:${w.id}`),
+      // 관리자 비밀번호: Cloudflare 대시보드 → Settings → Variables and Secrets → ADMIN_TOKEN (Secret)
+      adminToken: env.ADMIN_TOKEN || '',
       broadcast: (msg) => this.broadcast(msg),
       online: () => ctx.getWebSockets().length,
     });

@@ -47,6 +47,11 @@ const pond = new Pond({
   persist: () => {
     dirty = true;
   },
+  remove: () => {
+    dirty = true;
+  },
+  // 관리자 페이지 비밀번호: ADMIN_TOKEN=... npm start (없으면 관리자 기능 꺼짐)
+  adminToken: process.env.ADMIN_TOKEN || '',
   broadcast,
   online: () => sockets.size,
 });
@@ -91,17 +96,25 @@ function safeJoin(base, rel) {
 async function handleApi(req, res) {
   let body;
   if (req.method === 'POST') {
+    let tooBig = false;
     body = await new Promise((resolve) => {
       let data = '';
       req.on('data', (c) => {
+        if (tooBig) return;
         data += c;
-        if (data.length > 4096) req.destroy();
+        if (data.length > 4096) tooBig = true; // 더 받지 않고 끝나면 413 으로 답함
       });
       req.on('end', () => resolve(data));
       req.on('error', () => resolve(''));
     });
+    if (tooBig) {
+      res.writeHead(413, { 'content-type': 'application/json; charset=utf-8' });
+      return res.end(JSON.stringify({ error: 'too_large' }));
+    }
   }
-  const request = new Request(`http://localhost${req.url}`, { method: req.method, body, headers: { 'content-type': 'application/json' } });
+  const headers = { 'content-type': 'application/json' };
+  for (const h of ['x-pond-uid', 'authorization']) if (req.headers[h]) headers[h] = req.headers[h];
+  const request = new Request(`http://localhost${req.url}`, { method: req.method, body, headers });
   const response = await pond.handle(request, req.socket.remoteAddress || '?');
   res.writeHead(response.status, Object.fromEntries(response.headers));
   res.end(await response.text());
@@ -123,6 +136,7 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  if (p === '/admin') p = '/admin.html';
   if (p.startsWith('/vendor/three/')) {
     const f = safeJoin(THREE_DIR, p.slice('/vendor/three/'.length));
     return f ? serveFile(res, f) : (res.writeHead(400), res.end());

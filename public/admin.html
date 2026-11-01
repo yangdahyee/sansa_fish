@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>소원 연못 · 관리자</title>
+  <link rel="icon" href="/icon.svg" />
+  <style>
+    :root { --bg: #0b1626; --card: #13233a; --line: #24395a; --ink: #eaf2ff; --dim: #93a8c4; --gold: #ffcf6b; --red: #ff7a6b; --green: #7fe3a0; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+    button, input, select { font: inherit; color: inherit; }
+    button { cursor: pointer; border: 0; border-radius: 10px; padding: 8px 12px; background: #20365a; }
+    button:hover { background: #2a4472; }
+    button.gold { background: linear-gradient(135deg, #ffd27a, #ff9a6b); color: #3a1800; font-weight: 700; }
+    button.danger { background: #5a2430; }
+    button.danger:hover { background: #7a2d3b; }
+    input, select { background: #0e1b2e; border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; outline: none; }
+    [hidden] { display: none !important; }
+    a { color: inherit; text-decoration: none; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 18px 60px; }
+    header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    h1 { margin: 0; font-size: 20px; }
+    h1 small { color: var(--dim); font-weight: 400; font-size: 13px; margin-left: 8px; }
+    .login { max-width: 360px; margin: 18vh auto 0; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 22px; }
+    .login p { color: var(--dim); font-size: 13px; line-height: 1.6; }
+    .login input { width: 100%; margin: 6px 0 12px; }
+    .login button { width: 100%; }
+    .err { color: var(--red); font-size: 13px; min-height: 1.2em; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin: 18px 0; }
+    .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+    .stat b { display: block; font-size: 22px; }
+    .stat span { color: var(--dim); font-size: 12px; }
+    .stat.warn b { color: var(--red); }
+    .bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .tabs button.on { background: var(--gold); color: #3a1800; font-weight: 700; }
+    .bar input { flex: 1; min-width: 180px; }
+    table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; font-size: 14px; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--dim); font-weight: 500; font-size: 12px; background: #102038; }
+    tr:last-child td { border-bottom: 0; }
+    tr.is-hidden td { opacity: .55; }
+    .txt { max-width: 380px; word-break: keep-all; line-height: 1.45; }
+    .tag { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 99px; margin: 2px 4px 0 0; border: 1px solid var(--line); color: var(--dim); }
+    .tag.star { color: var(--gold); border-color: #6a5a2a; }
+    .tag.hidden { color: var(--red); border-color: #6a2a2a; }
+    .tag.private { color: #b9a2ff; border-color: #44396a; }
+    .tag.rep { color: #fff; background: #7a2d3b; border-color: #7a2d3b; }
+    .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+    .acts button { padding: 6px 9px; font-size: 12px; }
+    .muted { color: var(--dim); font-size: 12px; }
+    .empty { text-align: center; color: var(--dim); padding: 40px; }
+    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #20365a; padding: 10px 16px; border-radius: 12px; font-size: 14px; }
+    @media (max-width: 760px) {
+      thead { display: none; }
+      table, tbody, tr, td { display: block; width: 100%; }
+      tr { border-bottom: 1px solid var(--line); padding: 8px 0; }
+      td { border: 0; padding: 4px 12px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- 로그인 -->
+  <section id="loginView" class="login">
+    <h1>🔒 소원 연못 관리자</h1>
+    <p>관리자 비밀번호(ADMIN_TOKEN)를 넣어 주세요. 비밀번호는 이 탭을 닫으면 잊어버려요.</p>
+    <input id="token" type="password" placeholder="관리자 비밀번호" autocomplete="current-password" />
+    <p class="err" id="loginErr"></p>
+    <button class="gold" id="btnLogin">들어가기</button>
+  </section>
+
+  <!-- 관리 화면 -->
+  <main id="adminView" class="wrap" hidden>
+    <header>
+      <h1>소원 연못 관리자 <small id="updated"></small></h1>
+      <div class="bar" style="margin:0">
+        <button id="btnRefresh">↻ 새로고침</button>
+        <button id="btnExport">💾 백업 내려받기</button>
+        <a href="/" target="_blank"><button>🐟 연못 열기</button></a>
+        <button id="btnLogout">나가기</button>
+      </div>
+    </header>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="bar">
+      <div class="tabs" id="tabs">
+        <button data-f="reported" class="on">🚩 신고된 소원</button>
+        <button data-f="all">전체</button>
+        <button data-f="swimming">🐟 헤엄치는</button>
+        <button data-f="star">✦ 별</button>
+        <button data-f="hidden">🙈 숨긴</button>
+      </div>
+      <input id="q" placeholder="소원 글·이름·ID 검색" />
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>소원</th><th>먹이</th><th>신고</th><th>방생</th><th>처리</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="muted" id="count"></p>
+  </main>
+
+  <script type="module" src="/js/admin.js"></script>
+</body>
+</html>

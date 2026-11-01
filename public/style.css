@@ -408,3 +408,7 @@ body.in-ritual .panel, body.in-ritual .bottom-bars, body.in-ritual .fish-card, b
 
 /* 안내 문구는 누를 수 없는 글씨 — 아래 버튼을 가리지 않게 */
 .bottom-bars, .steer-hint { pointer-events: none; }
+
+/* 신고 버튼: 눈에 덜 띄게 */
+.card-actions .report { flex: none; background: none; color: var(--ink-dim); font-size: 12px; padding: 8px 6px; }
+.card-actions .report:hover { color: var(--coral); background: rgba(255,255,255,.05); }

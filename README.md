@@ -27,6 +27,22 @@
 5. **별** — 21번째 먹이가 들어오면 그 물고기가 폭포를 올라 등용문을 지나 용이 되어 별로. 내 소원이거나 내가 먹이를 준 소원이면 영화 같은 장면으로 함께 봅니다.
 6. **다시 왔을 때** — “없는 동안 3명이 내 소원에 먹이를 줬어요”, 없는 동안 별이 됐다면 그 장면을 다시 보여 줌
 
+## 안전장치와 관리자
+
+**소원 거르기** (`core/moderation.js`)
+- 욕설·성적 표현, 링크·전화번호·이메일(광고·개인정보)이 들어간 소원은 방생 단계에서 막습니다. 띄어쓰기·기호로 끊어 써도 걸립니다.
+- ‘보지 않기’, ‘자지 않고’, ‘시발점’처럼 평범한 말에 섞이는 낱말은 일부러 빼거나 예외로 두었습니다.
+
+**신고** — 소원 카드의 🚩 신고. 서로 다른 **3명**이 신고하면 자동으로 숨겨지고, 관리자가 확인해 다시 보이게 하거나 지웁니다. 숨겨진 소원의 주인에게는 “신고가 들어와 잠시 숨겨졌어요”가 보입니다.
+
+**먹이 몰아주기 막기** — 같은 소원에는 한 사람(브라우저)당 하루 한 번, 그리고 **같은 인터넷 주소에서는 하루 3번까지**. 휴대폰 통신사는 여러 사람이 주소를 함께 쓰므로 1이 아니라 3입니다.
+
+**관리자 페이지** — `/admin` (검색 엔진에 안 잡힘)
+- 신고된 소원 / 전체 / 헤엄치는 / 별 / 숨긴 소원, 글·이름·ID 검색 (비공개 소원 글도 보임)
+- 숨기기 · 다시 보이기 · 신고 지우기 · 삭제, 백업 내려받기(JSON)
+- 통계: 전체·오늘 방생·받은 먹이·신고·숨김·지금 접속
+- 비밀번호는 `ADMIN_TOKEN` (아래 배포 참고). 설정하지 않으면 관리자 기능은 꺼져 있고, 틀린 비밀번호는 한 시간에 10번까지만 받습니다.
+
 ## 서버
 
 규칙(소원 저장, 먹이 규칙, 별)은 **`core/pond.js` 한 곳**에 있고, 두 가지 방식으로 돌릴 수 있습니다.
@@ -39,7 +55,9 @@
 
 - 방문자는 브라우저가 만든 익명 아이디를 **해시로만** 보관합니다.
 - 한 사람당 헤엄치는 소원은 한 번에 하나, 별이 되면 새 소원을 띄울 수 있습니다.
-- REST: `GET /api/stats`, `GET /api/wishes?status=swimming|star&sort=mix|new|near|recent`, `GET /api/wishes?mine=1`, `GET /api/wishes/:id`, `POST /api/wishes`, `POST /api/wishes/:id/feed`
+- REST: `GET /api/stats`, `GET /api/wishes?status=swimming|star&sort=mix|new|near|recent`, `GET /api/wishes?mine=1`, `GET /api/wishes/:id`, `POST /api/wishes`, `POST /api/wishes/:id/feed`, `POST /api/wishes/:id/report`
+- 관리자: `GET /api/admin/stats`, `GET /api/admin/wishes?filter=&q=`, `POST /api/admin/wishes/:id {action}`, `GET /api/admin/export` (헤더 `Authorization: Bearer <ADMIN_TOKEN>`)
+- 방문자 아이디는 `x-pond-uid` 헤더로 주고받습니다 (주소창·서버 기록에 남지 않게)
 - WebSocket(`/ws`)은 알림 전용: 새 소원·먹이·별·접속자 수
 - 별까지 먹이 수는 `WISH_GOAL` (기본 21, 사람이 늘면 108). Cloudflare 는 `wrangler.jsonc` 의 `vars`
 
@@ -49,6 +67,7 @@
 npm install
 npm start
 # http://localhost:3000   (빨리 시험해 보려면 WISH_GOAL=3 npm start)
+# 관리자 페이지까지 쓰려면: ADMIN_TOKEN=아무비밀번호 npm start → http://localhost:3000/admin
 ```
 
 Cloudflare 와 똑같은 환경으로 돌려 보려면 `npm run cf:dev` → http://localhost:8787
@@ -64,12 +83,14 @@ Cloudflare 와 똑같은 환경으로 돌려 보려면 `npm run cf:dev` → http
    - Deploy command: `npx wrangler deploy`
    - 브랜치: 배포할 브랜치 (보통 `main`)
 4. **Save and Deploy** → `https://wish-pond.<내 하위 도메인>.workers.dev` 주소가 생김. 이후 그 브랜치에 푸시할 때마다 자동 배포
+5. **관리자 비밀번호 넣기**: 프로젝트 → **Settings → Variables and Secrets → Add** → Type **Secret**, Name `ADMIN_TOKEN`, Value 에 길고 어려운 비밀번호 → **Deploy**. 이제 `https://…workers.dev/admin` 에서 로그인
 
 **방법 B — 내 컴퓨터에서 명령어로**
 ```bash
 npm install
 npx wrangler login
 npm run deploy
+npx wrangler secret put ADMIN_TOKEN   # 관리자 비밀번호 입력
 ```
 
 > 무료 요금제는 한도를 넘으면 요금이 나가는 대신 그날 요청이 실패하고 다음 날 풀립니다. 결제 수단을 등록하거나 유료로 바꾸지 않으면 과금되지 않습니다.
@@ -77,14 +98,16 @@ npm run deploy
 ## 구조
 
 ```
-core/pond.js           소원 규칙 (저장·먹이·별) — Node·Cloudflare 공용
+core/pond.js           소원 규칙 (저장·먹이·별·신고·관리자) — Node·Cloudflare 공용
+core/moderation.js     소원 글 거르기 (욕설·링크·연락처)
 server.js              내 컴퓨터용 서버 (파일 저장 + ws)
 src/worker.js          Cloudflare Worker + Durable Object
 wrangler.jsonc         Cloudflare 설정
 scripts/build-vendor.js  three.js 필요한 파일만 public/vendor 로 복사 (배포 전)
 public/
   index.html, style.css
-  js/main.js           화면 ↔ 3D 연못 ↔ 서버 (방생 의식, 소원 카드, 모아 보기, 별 장면)
+  admin.html, js/admin.js  관리자 페이지 (/admin)
+  js/main.js           화면 ↔ 3D 연못 ↔ 서버 (방생 의식, 소원 카드, 신고, 모아 보기, 별 장면)
   js/world.js          Three.js 장면: 하늘·연못·폭포·등용문, 물고기 AI·물리, 카메라 연출
   js/water.js          물·폭포·거품·코스틱·이끼 바위 셰이더
   js/decor.js          연잎·연꽃·석등·연못가 장식
