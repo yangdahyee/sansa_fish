@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { makeWaterMaterial, addCaustics } from './water.js';
+import { makeWaterMaterial, addCaustics, makeFallSheet, makeFallsMaterial, makeFoamMaterial, makeMossyRockMaterial } from './water.js';
 import { SPECIES, SPECIES_IDS, MOVES } from './data.js';
 
 // ---------- 연못 치수 ----------
@@ -1147,7 +1147,7 @@ export class World {
 
     // 둘레 바위
     const rockG = new THREE.DodecahedronGeometry(1, 0);
-    const rockM = new THREE.MeshStandardMaterial({ color: 0x55606b, roughness: 0.95, flatShading: true });
+    const rockM = makeMossyRockMaterial({ color: 0x56606a, moss: 0x3f6440, amount: 0.7 });
     const count = 46;
     const rocks = new THREE.InstancedMesh(rockG, rockM, count);
     const m = new THREE.Matrix4();
@@ -1170,28 +1170,9 @@ export class World {
 
   // ---------- 등용문 폭포 ----------
   buildFalls() {
-    const rockM = new THREE.MeshStandardMaterial({ color: 0x4a5560, roughness: 0.9, flatShading: true });
-    const mossM = new THREE.MeshStandardMaterial({ color: 0x2f5a3a, roughness: 1, flatShading: true });
-    this.fallsMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }`,
-      fragmentShader: `
-        uniform float uTime; varying vec2 vUv;
-        float h(float x){ return fract(sin(x*127.1)*43758.5453); }
-        void main(){
-          float col = floor(vUv.x*56.0);
-          float sp = 1.2 + h(col)*1.2;
-          float s = fract(vUv.y*1.2 + uTime*sp + h(col)*7.0);
-          float streak = smoothstep(0.0, 0.5, s) * smoothstep(1.0, 0.7, s) * (0.5 + h(col+3.0)*0.5);
-          float edge = smoothstep(0.0, 0.15, vUv.x) * smoothstep(1.0, 0.85, vUv.x);
-          float foam = smoothstep(0.25, 0.0, vUv.y);
-          vec3 c = mix(vec3(0.62,0.84,0.95), vec3(1.0), clamp(streak*0.8 + foam, 0.0, 1.0));
-          gl_FragColor = vec4(c, (0.55 + streak*0.35 + foam*0.2) * edge);
-        }`,
-    });
+    const rockM = makeMossyRockMaterial({ color: 0x4b5560, moss: 0x35583a, amount: 0.85 });
+    this.fallsMat = makeFallsMaterial(this.waterUniforms.uTime);
+    this.falls = { landings: [], foams: [] };
 
     const fallsGroup = new THREE.Group();
     for (let i = 0; i <= TIERS; i++) {
@@ -1200,35 +1181,47 @@ export class World {
       const y = i * TIER_H;
       const z = FALLS_Z - i * 0.75;
       const depth = top ? 3.4 : 1.6;
-      // 단(바위 턱)
-      const step = new THREE.Mesh(new THREE.BoxGeometry(w + 2.2, TIER_H, depth, 4, 2, 2), rockM);
-      const sp = step.geometry.attributes.position;
+      // 단(바위 턱): 옆면은 울퉁불퉁, 윗면은 평평 (문·물고기가 뜨지 않게)
+      const g = new THREE.BoxGeometry(w + 2.2, TIER_H, depth, 10, 3, 4);
+      const sp = g.attributes.position;
       for (let k = 0; k < sp.count; k++) {
-        sp.setXYZ(k, sp.getX(k) + rand(-0.12, 0.12), sp.getY(k) + rand(-0.08, 0.08), sp.getZ(k) + rand(-0.12, 0.12));
+        const vx = sp.getX(k);
+        const vy = sp.getY(k);
+        const vz = sp.getZ(k);
+        const n = Math.sin(vx * 2.1 + i) * Math.cos(vz * 3.3) * 0.08 + rand(-0.07, 0.07);
+        sp.setXYZ(k, vx + rand(-0.1, 0.1), vy + n, vz + rand(-0.1, 0.1));
       }
-      step.geometry.computeVertexNormals();
-      // 윗면은 평평하게 두어야 문·물고기가 뜨지 않음 (옆면만 울퉁불퉁)
-      for (let k = 0; k < sp.count; k++) if (sp.getY(k) > TIER_H / 2 - 0.1) sp.setY(k, TIER_H / 2);
-      step.geometry.computeVertexNormals();
+      for (let k = 0; k < sp.count; k++) if (sp.getY(k) > TIER_H / 2 - 0.15) sp.setY(k, TIER_H / 2);
+      g.computeVertexNormals();
+      const step = new THREE.Mesh(g, rockM);
       step.position.set(0, y - TIER_H / 2 + 0.05, z + 0.3 - depth / 2);
       fallsGroup.add(step);
-      // 이끼
-      const moss = new THREE.Mesh(new THREE.BoxGeometry(w + 2.3, 0.08, depth - 0.2), mossM);
-      moss.position.set(0, y + 0.07, z + 0.2 - depth / 2);
-      fallsGroup.add(moss);
       // 작은 웅덩이 물
       const pool = new THREE.Mesh(new THREE.PlaneGeometry(top ? 2.6 : w, top ? depth - 0.4 : 1.2), this.poolMat);
       pool.rotation.x = -Math.PI / 2;
       pool.position.set(0, y + 0.16, top ? z + 0.1 - (depth - 0.4) / 2 : z - 0.3);
       fallsGroup.add(pool);
-      // 떨어지는 물줄기
-      const fall = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.8, TIER_H + 0.15), this.fallsMat);
-      fall.position.set(0, y - TIER_H / 2 + 0.12, z + 0.56);
+      // 떨어지는 물줄기: 턱에서 휘어 넘쳐 아래 단(맨 아래는 연못)으로
+      const lipY = y + 0.12;
+      const lipZ = z + 0.3;
+      const landY = i === 0 ? -0.05 : y - TIER_H + 0.17;
+      const out = 0.42 + i * 0.01;
+      const fall = new THREE.Mesh(makeFallSheet(w * 0.78, lipY, lipZ, lipY - landY, out), this.fallsMat);
       fall.renderOrder = 3;
       fallsGroup.add(fall);
+      // 떨어지는 자리의 거품
+      const landZ = lipZ + out + 0.15;
+      const foam = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), makeFoamMaterial(this.waterUniforms.uTime));
+      foam.rotation.x = -Math.PI / 2;
+      const big = i === 0 ? 1.7 : 1;
+      foam.scale.set(w * 0.95 * big, 1.1 * big, 1);
+      foam.position.set(0, Math.max(landY, 0) + 0.04, landZ + (i === 0 ? 0.35 : 0));
+      foam.renderOrder = 4;
+      fallsGroup.add(foam);
+      this.falls.landings.push({ x: w * 0.78, y: Math.max(landY, 0) + 0.05, z: landZ, big });
     }
     // 폭포 양옆 절벽 — 탑이 아니라 산에서 떨어지는 폭포처럼 보이게
-    const cliffM = new THREE.MeshStandardMaterial({ color: 0x3d4752, roughness: 1, flatShading: true });
+    const cliffM = makeMossyRockMaterial({ color: 0x46505b, moss: 0x33573a, amount: 0.85 });
     const cliffG = new THREE.DodecahedronGeometry(1, 0);
     const cliffs = new THREE.InstancedMesh(cliffG, cliffM, TIERS * 6 + 8);
     const cm = new THREE.Matrix4();
@@ -1251,6 +1244,54 @@ export class World {
     }
     cliffs.count = ci;
     fallsGroup.add(cliffs);
+
+    // 절벽 틈의 풀과 덤불
+    const tuftParts = [];
+    for (let k = 0; k < 7; k++) {
+      const h = rand(0.35, 0.7);
+      const c = new THREE.ConeGeometry(0.05, h, 4);
+      c.translate(0, h / 2, 0);
+      c.rotateZ(rand(-0.5, 0.5));
+      c.rotateY(rand(0, 6));
+      c.translate(rand(-0.12, 0.12), 0, rand(-0.12, 0.12));
+      tuftParts.push(c.toNonIndexed());
+    }
+    const tuftG = mergeGeometries(tuftParts);
+    const tuftM = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8, flatShading: true });
+    const tufts = new THREE.InstancedMesh(tuftG, tuftM, ci * 2);
+    const bushG = new THREE.IcosahedronGeometry(0.3, 0);
+    const bushM = new THREE.MeshStandardMaterial({ color: 0x2f5a2c, roughness: 1, flatShading: true });
+    const bushes = new THREE.InstancedMesh(bushG, bushM, ci);
+    let ti = 0;
+    let bi = 0;
+    const im = new THREE.Matrix4();
+    const ip = new THREE.Vector3();
+    const iq = new THREE.Quaternion();
+    const isc = new THREE.Vector3();
+    for (let k = 0; k < ci; k++) {
+      cliffs.getMatrixAt(k, im);
+      im.decompose(ip, iq, isc);
+      const top = ip.clone();
+      top.y += isc.y * 0.75;
+      for (let r = 0; r < 2; r++) {
+        if (Math.random() < 0.6) {
+          im.compose(
+            top.clone().add(new THREE.Vector3(rand(-0.5, 0.5) * isc.x, 0, rand(-0.4, 0.4) * isc.z)),
+            new THREE.Quaternion(),
+            new THREE.Vector3(1, rand(0.7, 1.4), 1),
+          );
+          tufts.setMatrixAt(ti++, im);
+        }
+      }
+      if (Math.random() < 0.35) {
+        const s2 = rand(0.6, 1.3);
+        im.compose(top.clone().add(new THREE.Vector3(rand(-0.4, 0.4), -0.05, rand(-0.3, 0.3))), iq, new THREE.Vector3(s2 * 1.3, s2 * 0.8, s2));
+        bushes.setMatrixAt(bi++, im);
+      }
+    }
+    tufts.count = ti;
+    bushes.count = bi;
+    fallsGroup.add(tufts, bushes);
     // 뒤쪽 산 능선
     const ridgeM = new THREE.MeshStandardMaterial({ color: 0x1c2a33, roughness: 1, flatShading: true });
     for (let i = 0; i < 9; i++) {
@@ -2489,6 +2530,21 @@ export class World {
       const k = (time * u.sp + u.ph) % 3;
       m.position.set(u.x + Math.sin(time + u.ph) * 0.3, -0.2 + k * 0.6, FALLS_Z + 1.4);
       m.material.opacity = 0.2 * (1 - k / 3);
+    }
+    // 물줄기가 떨어지는 자리마다 튀는 물방울
+    if (this.falls) {
+      for (const l of this.falls.landings) {
+        if (Math.random() < dt * 9 * l.big) {
+          this.spawnParticle(
+            tmpV2.set(rand(-0.45, 0.45) * l.x, l.y, l.z + rand(-0.1, 0.25)),
+            0xe8f7ff,
+            new THREE.Vector3(rand(-0.6, 0.6), rand(1.2, 2.6) * l.big, rand(0.1, 0.9)),
+            rand(0.5, 0.9),
+            rand(0.08, 0.16) * l.big,
+            -7,
+          );
+        }
+      }
     }
     this.gateGlow.material.opacity = 0.4 + Math.sin(time * 1.5) * 0.12 + (this.beam?.material.uniforms.uAlpha.value || 0) * 0.5;
     // 빛기둥

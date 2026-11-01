@@ -221,3 +221,152 @@ export function addCaustics(material, uTime, strength = 0.5) {
   material.customProgramCacheKey = () => `caustic-${strength}`;
   return material;
 }
+
+// ======================================================================
+// 폭포
+// ======================================================================
+const FBM = `
+  float fbm(vec2 p) {
+    float s = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 4; i++) {
+      s += vnoise(p) * a;
+      p = p * 2.03 + vec2(1.7, 9.2);
+      a *= 0.5;
+    }
+    return s;
+  }`;
+
+// 단 끝에서 휘어 넘쳐흐르는 물줄기 곡면 (u: 가로, v: 위→아래)
+export function makeFallSheet(width, lipY, lipZ, drop, out = 0.5) {
+  const W = 28;
+  const V = 20;
+  const pos = [];
+  const uv = [];
+  const idx = [];
+  for (let j = 0; j <= V; j++) {
+    const v = j / V;
+    // 2차 베지어: 턱 위 → 앞으로 살짝 → 아래로 떨어짐
+    const p0 = [lipZ - 0.2, lipY + 0.02];
+    const p1 = [lipZ + out, lipY + 0.04];
+    const p2 = [lipZ + out + 0.15, lipY - drop];
+    const k = 1 - v;
+    const z = k * k * p0[0] + 2 * k * v * p1[0] + v * v * p2[0];
+    const y = k * k * p0[1] + 2 * k * v * p1[1] + v * v * p2[1];
+    for (let i = 0; i <= W; i++) {
+      const u = i / W;
+      pos.push((u - 0.5) * width * (1 + v * 0.1), y, z);
+      uv.push(u, v);
+    }
+  }
+  for (let j = 0; j < V; j++) {
+    for (let i = 0; i < W; i++) {
+      const a = j * (W + 1) + i;
+      const b = a + W + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+export function makeFallsMaterial(uTime) {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    uniforms: { uTime },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform float uTime; varying vec2 vUv;
+      ${NOISE}
+      ${FBM}
+      void main() {
+        float u = vUv.x;
+        float v = vUv.y;
+        // 가장자리는 물이 갈라지듯 흔들림
+        float wob = (vnoise(vec2(v * 5.0 - uTime * 1.6, u * 2.0)) - 0.5) * 0.08;
+        float edge = smoothstep(0.0, 0.1, u + wob) * smoothstep(1.0, 0.9, u - wob);
+        // 위에서 아래로 흐르는 결 (세로로 길게 늘인 노이즈)
+        float s1 = fbm(vec2(u * 9.0, v * 1.6 - uTime * 1.9));
+        float s2 = fbm(vec2(u * 26.0, v * 3.4 - uTime * 3.1));
+        float streak = smoothstep(0.38, 0.8, s1 * 0.65 + s2 * 0.45);
+        // 턱 위 거품, 떨어지는 아래쪽 거품
+        float foamTop = smoothstep(0.2, 0.0, v) * (0.55 + 0.45 * s2);
+        float foamBot = smoothstep(0.6, 1.0, v) * (0.45 + 0.55 * fbm(vec2(u * 12.0, v * 5.0 - uTime * 4.0)));
+        float foam = clamp(foamTop + foamBot, 0.0, 1.0);
+        vec3 deep = vec3(0.14, 0.33, 0.43);
+        vec3 lite = vec3(0.76, 0.91, 0.98);
+        vec3 c = mix(deep, lite, clamp(streak * 0.85 + foam * 0.5, 0.0, 1.0));
+        c = mix(c, vec3(0.95, 0.99, 1.0), foam * 0.7);
+        c += vec3(1.0, 0.95, 0.85) * pow(s2, 7.0) * 0.9; // 달빛에 반짝이는 물방울
+        float a = (0.48 + streak * 0.35 + foam * 0.4) * edge;
+        a *= 1.0 - smoothstep(0.86, 1.0, v) * (0.65 - 0.5 * s2); // 아래로 갈수록 흩어지며 물보라로
+        gl_FragColor = vec4(c, clamp(a, 0.0, 1.0));
+      }`,
+  });
+}
+
+// 물줄기가 떨어지는 자리의 하얀 거품
+export function makeFoamMaterial(uTime) {
+  return new THREE.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: { uTime, uSeed: { value: Math.random() * 10 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      uniform float uTime; uniform float uSeed; varying vec2 vUv;
+      ${NOISE}
+      ${FBM}
+      void main() {
+        vec2 p = vUv - 0.5;
+        float d = length(p * vec2(1.0, 1.6)) * 2.0;
+        float churn = fbm(p * 7.0 + vec2(uSeed, uTime * 0.9)) + fbm(p * 15.0 - vec2(uTime * 1.3, uSeed)) * 0.5;
+        float a = smoothstep(1.0, 0.25, d) * smoothstep(0.45, 0.8, churn * 0.8 + (1.0 - d) * 0.45);
+        gl_FragColor = vec4(vec3(0.94, 0.98, 1.0), a * 0.9);
+      }`,
+  });
+}
+
+// ======================================================================
+// 이끼 낀 바위: 돌 얼룩 + 위를 향한 면에만 이끼
+// ======================================================================
+export function makeMossyRockMaterial({ color = 0x4f5a64, moss = 0x3f6f3a, amount = 1, roughness = 0.92 } = {}) {
+  const m = new THREE.MeshStandardMaterial({ color, roughness, flatShading: true });
+  const mossC = new THREE.Color(moss);
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uMoss = { value: mossC };
+    sh.uniforms.uMossAmt = { value: amount };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRW;\nvarying vec3 vRN;').replace(
+      '#include <project_vertex>',
+      `#include <project_vertex>
+      #ifdef USE_INSTANCING
+        vRW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+        vRN = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal);
+      #else
+        vRW = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vRN = normalize(mat3(modelMatrix) * objectNormal);
+      #endif`,
+    );
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying vec3 vRW;\nvarying vec3 vRN;\nuniform vec3 uMoss;\nuniform float uMossAmt;\n${NOISE}`)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+        {
+          float nn = vnoise(vRW.xz * 1.7 + vRW.y * 0.3) * 0.6 + vnoise(vRW.xz * 5.3 + vRW.y * 2.1) * 0.4;
+          diffuseColor.rgb *= 0.74 + nn * 0.5;                                 // 돌 얼룩
+          diffuseColor.rgb *= 0.9 + (sin(vRW.y * 7.0 + nn * 3.0) * 0.5 + 0.5) * 0.14; // 결
+          float up = smoothstep(0.42, 0.85, normalize(vRN).y + (nn - 0.5) * 0.4);
+          float dry = smoothstep(-0.4, 0.15, vRW.y);                           // 물속은 이끼 적게
+          diffuseColor.rgb = mix(diffuseColor.rgb, uMoss * (0.6 + nn * 0.5), up * uMossAmt * dry * (0.75 + nn * 0.25));
+        }`,
+      );
+  };
+  m.customProgramCacheKey = () => 'mossy-rock';
+  return m;
+}
