@@ -295,6 +295,7 @@ async function main() {
     $('dreamView').hidden = !d;
     document.querySelectorAll('#bubbleBar button').forEach((b) => (b.disabled = !d));
     $('moveBar').hidden = !d;
+    updateHint();
     $('bubbleBar').title = d ? '' : '꿈을 방류하면 물방울 말을 보낼 수 있어요';
 
     if (!d) {
@@ -588,11 +589,14 @@ async function main() {
       world.setView(mode, target);
     };
   });
-  world.onViewChange = (v) => {
-    document.querySelectorAll('.views button').forEach((b) => b.classList.toggle('on', b.dataset.view === v.mode));
+  // 아래 안내 문구: 시점과 내 물고기 유무에 따라
+  function updateHint() {
+    const v = world.view;
     const hint = $('steerHint');
+    $('dpad').hidden = !(touchOnly && state.dream);
     if (v.mode === 'pond') {
-      hint.hidden = true;
+      hint.hidden = !state.dream || touchOnly;
+      hint.textContent = '방향키/WASD로 내 물고기 움직이기 · Space 위 · Shift 아래 · 연못을 클릭하면 그 자리로';
       return;
     }
     hint.hidden = false;
@@ -603,9 +607,38 @@ async function main() {
     } else {
       hint.textContent = `${others.get(v.fishId)?.name || '친구'} 물고기를 보고 있어요 · Esc 또는 🗺️로 돌아가기`;
     }
+  }
+
+  world.onViewChange = (v) => {
+    document.querySelectorAll('.views button').forEach((b) => b.classList.toggle('on', b.dataset.view === v.mode));
+    updateHint();
+    if (v.mode === 'pond') return;
     if (mobile()) openPanel(false);
     closeCard();
   };
+  // 모바일 방향 패드
+  document.querySelectorAll('#dpad button').forEach((b) => {
+    const k = b.dataset.k;
+    const up = () => world.pressKey(k, false);
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      b.setPointerCapture?.(e.pointerId);
+      world.pressKey(k, true);
+      buzz(5);
+    });
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
+    b.addEventListener('lostpointercapture', up);
+  });
+
+  // 방향키로 움직이는 동안 다른 사람 화면에서도 같은 쪽으로 가도록 앞쪽 지점을 계속 알려 줌
+  setInterval(() => {
+    const f = world.getFish(ME);
+    if (!f || !world.steering(f) || !net.online) return;
+    const ahead = f.pos.clone().addScaledVector(f.vel, 0.45);
+    net.send({ t: 'goto', p: [ahead.x, ahead.y, ahead.z].map((v) => Math.round(v * 100) / 100) });
+  }, 250);
+
   world.onSwimTo = (p) => {
     sfx.bubble();
     buzz(8);

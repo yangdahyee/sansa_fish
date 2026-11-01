@@ -602,8 +602,22 @@ class Fish {
     let desired;
     if (this.move) {
       desired = this.stepMove(dt, time, tmpV) || tmpV;
+    } else if (steering && w.view.mode === 'pond') {
+      // 연못 전체 시점: 화면 기준으로 ↑ 안쪽, ↓ 내 쪽, ← → 화면 왼쪽·오른쪽
+      const s = w.keys;
+      const fwdV = w.camera.getWorldDirection(tmpV2);
+      fwdV.y = 0;
+      fwdV.normalize();
+      const fx = (s.has('fwd') ? 1 : 0) - (s.has('back') ? 1 : 0);
+      const rx = (s.has('right') ? 1 : 0) - (s.has('left') ? 1 : 0);
+      const vy = (s.has('up') ? 1.4 : 0) - (s.has('down') ? 1.4 : 0);
+      desired = tmpV.set(fwdV.x * fx - fwdV.z * rx, 0, fwdV.z * fx + fwdV.x * rx);
+      if (desired.lengthSq() > 0) desired.setLength(2.5);
+      else desired.copy(this.vel).multiplyScalar(0.85); // 키를 떼면 스르르 멈춤
+      desired.y = vy;
+      this.animRate = desired.lengthSq() > 0.5 ? 3 : 1;
     } else if (steering) {
-      // 키보드로 직접 헤엄치기
+      // 따라가기·물고기 눈: 물고기 기준 (↑ 앞으로, ← → 방향 틀기)
       const s = w.keys;
       this.steerYaw ??= this.root.rotation.y;
       const turn = (s.has('left') ? 1 : 0) - (s.has('right') ? 1 : 0);
@@ -1918,7 +1932,27 @@ export class World {
 
   // 이 물고기를 지금 키보드로 조종 중인가
   steering(fish) {
-    return this.view.mode !== 'pond' && this.view.fishId === fish.id && this.keys.size > 0;
+    return this.keys.size > 0 && fish === this.steerTarget();
+  }
+
+  // 방향키로 움직일 물고기: 연못 전체 시점이면 내 물고기, 다른 시점이면 지금 보고 있는 내 물고기
+  steerTarget() {
+    if (this.view.mode === 'pond') return [...this.fishes.values()].find((f) => f.isMe && !f.action) || null;
+    const f = this.view.fishId && this.fishes.get(this.view.fishId);
+    return f?.isMe && !f.action ? f : null;
+  }
+
+  // 화면 버튼(모바일 방향 패드)에서도 같은 키를 누른 것처럼
+  pressKey(k, down) {
+    const f = this.steerTarget();
+    if (down) {
+      if (!f) return;
+      if (!this.keys.has(k)) {
+        this.keys.add(k);
+        f.manual = null;
+        f.move = null;
+      }
+    } else this.keys.delete(k);
   }
 
   bindKeys() {
@@ -1935,14 +1969,10 @@ export class World {
       if (typing(e)) return;
       if (e.code === 'Escape' && this.view.mode !== 'pond') return this.setView('pond');
       const k = map[e.code];
-      const f = this.view.fishId && this.fishes.get(this.view.fishId);
-      if (!k || !f?.isMe || this.view.mode === 'pond') return;
-      e.preventDefault();
-      if (!this.keys.has(k)) {
-        this.keys.add(k);
-        f.manual = null;
-        f.move = null;
-      }
+      if (!k || !this.steerTarget()) return;
+      e.preventDefault(); // 화면 스크롤·버튼 눌림 막기
+      if (document.activeElement?.tagName === 'BUTTON') document.activeElement.blur();
+      this.pressKey(k, true);
     });
     window.addEventListener('keyup', (e) => {
       const k = map[e.code];
