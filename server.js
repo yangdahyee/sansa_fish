@@ -17,6 +17,8 @@ const STARS_FILE = path.join(DATA_DIR, 'stars.json');
 const SPECIES = ['berry', 'lemon', 'coral', 'neon'];
 // 자유 채팅 대신 정해진 말만 주고받는다 (클라이언트 public/js/phrases.js 와 같은 순서)
 const PHRASE_COUNT = 6;
+// 헤엄 동작 개수 (public/js/data.js 의 MOVES 와 같은 순서)
+const MOVE_COUNT = 7;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -253,6 +255,12 @@ wss.on('connection', (ws, req) => {
         if (!client.joined || !allow(1200)) return;
         const idx = clampInt(m.i, 0, PHRASE_COUNT - 1);
         broadcast(room, { t: 'bubble', from: client.id, i: idx });
+        break;
+      }
+      case 'act': {
+        // 헤엄 동작(질주, 맴돌기 등) — 다른 사람 화면에서도 같은 동작을 하게
+        if (!client.joined || !allow(500)) return;
+        broadcast(room, { t: 'act', from: client.id, i: clampInt(m.i, 0, MOVE_COUNT - 1) }, client.id);
         break;
       }
       case 'leap': {

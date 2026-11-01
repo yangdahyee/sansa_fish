@@ -28,3 +28,14 @@ export function randomName() {
 
 export const MAX_TODOS = 10;
 export const SLEEP_AFTER_MS = 3 * 24 * 60 * 60 * 1000; // 3일 동안 아무것도 안 하면 수초 아래에서 쉼
+
+// 헤엄 동작 (server.js 의 MOVE_COUNT 와 개수를 맞출 것)
+export const MOVES = [
+  { id: 'dash', label: '💨 질주' },
+  { id: 'glide', label: '🪶 활공' },
+  { id: 'circle', label: '🌀 맴돌기' },
+  { id: 'nibble', label: '🫧 뻐끔뻐끔' },
+  { id: 'forage', label: '🪸 바닥 탐색' },
+  { id: 'roll', label: '🔄 공중제비' },
+  { id: 'wag', label: '💃 꼬리 춤' },
+];

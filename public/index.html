@@ -38,6 +38,11 @@
       </div>
     </div>
     <div class="top-actions">
+      <div class="views" role="group" aria-label="시점">
+        <button data-view="pond" class="on" title="연못 전체 보기 (Esc)">🗺️<span> 연못</span></button>
+        <button data-view="chase" title="내 물고기 따라가기">🎥<span> 따라가기</span></button>
+        <button data-view="eye" title="물고기 눈으로 보기">👁️<span> 물고기 눈</span></button>
+      </div>
       <button id="btnShare" class="ghost" title="이 연못 링크 복사">🔗 같이 헤엄치기</button>
       <button id="btnSound" class="ghost icon" title="소리 켜기/끄기">🔇</button>
       <button id="btnPanel" class="ghost icon mobile-only" title="나의 꿈">📜</button>
@@ -124,11 +129,16 @@
     <div class="card-actions">
       <button id="btnFeed" class="primary small">🍚 응원 먹이 주기</button>
       <button id="btnFollow" class="small">🐟 같이 헤엄치기</button>
+      <button id="btnWatch" class="small" title="이 물고기 시점으로 보기">🎥</button>
     </div>
   </div>
 
-  <!-- 정해진 말 물방울 -->
-  <nav id="bubbleBar" class="bubble-bar"></nav>
+  <!-- 아래 막대: 헤엄 동작 + 정해진 말 물방울 -->
+  <div class="bottom-bars">
+    <p id="steerHint" class="steer-hint" hidden></p>
+    <nav id="moveBar" class="bubble-bar move-bar" hidden></nav>
+    <nav id="bubbleBar" class="bubble-bar"></nav>
+  </div>
 
   <div id="toasts" class="toasts"></div>
   <div id="celebrate" class="celebrate" hidden></div>

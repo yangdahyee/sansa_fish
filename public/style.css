@@ -122,7 +122,7 @@ input:not([type]):focus { border-color: rgba(255, 207, 107, .6); }
 
 /* ---------- 물고기 카드 ---------- */
 .fish-card {
-  position: fixed; left: 16px; bottom: 88px; width: 300px; padding: 16px; z-index: 12;
+  position: fixed; left: 16px; bottom: 140px; width: 300px; padding: 16px; z-index: 12;
   background: var(--glass); border: 1px solid var(--glass-line); border-radius: var(--radius); backdrop-filter: blur(14px);
   box-shadow: 0 20px 50px rgba(0,0,0,.35); animation: rise .25s ease-out;
 }
@@ -132,12 +132,36 @@ input:not([type]):focus { border-color: rgba(255, 207, 107, .6); }
 .card-actions button { flex: 1; }
 @keyframes rise { from { transform: translateY(12px); opacity: 0; } }
 
+/* ---------- 시점 전환 ---------- */
+.views { display: flex; padding: 3px; gap: 2px; border-radius: 12px; background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(10px); }
+.views button { padding: 7px 10px; font-size: 13px; background: none; border-radius: 9px; }
+.views button.on { background: rgba(255, 207, 107, .9); color: #3a1800; font-weight: 700; }
+.views button:disabled { opacity: .35; cursor: not-allowed; }
+
+/* ---------- 아래 막대 ---------- */
+.bottom-bars {
+  position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px; z-index: 10; max-width: calc(100% - 24px);
+}
+.steer-hint { margin: 0; font-size: 12px; color: var(--ink); background: rgba(5, 15, 30, .55); padding: 6px 12px; border-radius: 99px; text-align: center; }
+.move-bar button { background: rgba(127, 227, 201, .1); }
+.move-bar button:hover { background: rgba(127, 227, 201, .22); }
+
+/* ---------- 물속 ---------- */
+body.underwater::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 1;
+  background:
+    radial-gradient(ellipse at 50% -10%, rgba(160, 235, 255, .18), transparent 55%),
+    radial-gradient(ellipse at 50% 50%, transparent 45%, rgba(0, 25, 45, .55) 100%);
+  animation: caustic 6s ease-in-out infinite alternate;
+}
+@keyframes caustic { to { background-position: 20px 0, 0 0; opacity: .85; } }
+
 /* ---------- 물방울 말 ---------- */
 .bubble-bar {
-  position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%);
-  display: flex; gap: 6px; padding: 6px; border-radius: 99px; z-index: 10;
+  display: flex; gap: 6px; padding: 6px; border-radius: 99px;
   background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(12px);
-  max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none;
+  max-width: 100%; overflow-x: auto; scrollbar-width: none;
 }
 .bubble-bar button { flex: none; border-radius: 99px; padding: 8px 12px; font-size: 13px; white-space: nowrap; background: rgba(255,255,255,.06); }
 
@@ -187,8 +211,10 @@ input:not([type]):focus { border-color: rgba(255, 207, 107, .6); }
     transform: translateY(0); transition: transform .3s;
   }
   .panel.collapsed { transform: translateY(calc(100% - 0px)); }
-  .bubble-bar { bottom: calc(max(16px, env(safe-area-inset-bottom))); }
-  body.panel-open .bubble-bar { display: none; }
+  body.panel-open .bottom-bars { display: none; }
+  .views button span { display: none; }
+  .views button { padding: 7px 8px; }
+  .brand > div { display: none; }
   .fish-card { left: 12px; right: 12px; width: auto; bottom: 76px; }
   .toasts { left: 12px; right: 12px; }
 }

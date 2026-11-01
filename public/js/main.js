@@ -1,7 +1,7 @@
 // 등용문 연못 — 화면(UI)과 연못(3D)·네트워크를 잇는 곳
 import { World } from './world.js';
 import { PondNet } from './net.js';
-import { SPECIES, SPECIES_IDS, PHRASES, MAX_TODOS } from './data.js';
+import { SPECIES, SPECIES_IDS, PHRASES, MAX_TODOS, MOVES } from './data.js';
 import { state, save, progress, isSleeping, touch } from './store.js';
 import { sfx, setSound, isSoundOn, buzz } from './sound.js';
 
@@ -187,6 +187,10 @@ async function main() {
     f?.say(PHRASES[e.detail.i] || '');
     sfx.bubble();
   });
+  net.addEventListener('act', (e) => {
+    const m = MOVES[e.detail.i];
+    if (m) world.getFish(e.detail.from)?.doMove(m.id);
+  });
   net.addEventListener('ascend', (e) => {
     const { from, star } = e.detail;
     if (from === net.id) return; // 내 등용은 직접 처리
@@ -259,6 +263,7 @@ async function main() {
     $('releaseView').hidden = !!d;
     $('dreamView').hidden = !d;
     document.querySelectorAll('#bubbleBar button').forEach((b) => (b.disabled = !d));
+    $('moveBar').hidden = !d;
     $('bubbleBar').title = d ? '' : '꿈을 방류하면 물방울 말을 보낼 수 있어요';
 
     if (!d) {
@@ -494,6 +499,12 @@ async function main() {
     renderCard(f.id);
   };
 
+  $('btnWatch').onclick = () => {
+    if (!openCard) return;
+    const id = openCard;
+    world.setView(world.view.mode === 'eye' ? 'eye' : 'chase', id);
+  };
+
   $('btnFeed').onclick = () => {
     if (!openCard) return;
     if (!net.online) return toast('연결되면 응원 먹이를 줄 수 있어요');
@@ -512,6 +523,54 @@ async function main() {
       toast(`${others.get(openCard)?.name} 물고기와 나란히 헤엄쳐요`);
     }
   };
+
+  // ---------- 헤엄 동작 ----------
+  MOVES.forEach((m, i) => {
+    const b = document.createElement('button');
+    b.textContent = m.label;
+    b.onclick = () => {
+      const f = world.getFish(ME);
+      if (!f) return;
+      f.doMove(m.id);
+      net.send({ t: 'act', i });
+      sfx.bubble();
+      buzz(10);
+    };
+    $('moveBar').appendChild(b);
+  });
+
+  // ---------- 시점 ----------
+  const touchOnly = matchMedia('(hover: none)').matches;
+  document.querySelectorAll('.views button').forEach((b) => {
+    b.onclick = () => {
+      const mode = b.dataset.view;
+      if (mode === 'pond') return world.setView('pond');
+      // 지금 다른 물고기를 보고 있으면 그 물고기, 아니면 내 물고기
+      const cur = world.view.fishId;
+      const target = cur && cur !== ME && world.getFish(cur) ? cur : state.dream ? ME : null;
+      if (!target) return toast('꿈을 방류하면 내 물고기 시점으로 볼 수 있어요');
+      world.setView(mode, target);
+    };
+  });
+  world.onViewChange = (v) => {
+    document.querySelectorAll('.views button').forEach((b) => b.classList.toggle('on', b.dataset.view === v.mode));
+    const hint = $('steerHint');
+    if (v.mode === 'pond') {
+      hint.hidden = true;
+      return;
+    }
+    hint.hidden = false;
+    if (v.fishId === ME) {
+      hint.textContent = touchOnly
+        ? '물을 톡 누르면 그쪽으로 헤엄쳐요 · 화면을 끌어 둘러보기'
+        : '물을 클릭하면 그쪽으로 · WASD/방향키 조종 · Space 위 · Shift 아래 · Esc 연못';
+    } else {
+      hint.textContent = `${others.get(v.fishId)?.name || '친구'} 물고기를 보고 있어요 · Esc 또는 🗺️로 돌아가기`;
+    }
+    if (mobile()) openPanel(false);
+    closeCard();
+  };
+  world.onSwimTo = () => sfx.bubble();
 
   // ---------- 물방울 말 ----------
   PHRASES.forEach((p, i) => {
