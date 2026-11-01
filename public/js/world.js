@@ -50,14 +50,65 @@ function insidePond(x, z, margin = 1.4) {
   return (x * x) / (rx * rx) + (z * z) / (rz * rz) <= 1;
 }
 
+// 연못 바닥 높이 — 바닥 메시도, 물고기 충돌도 이 함수 하나를 기준으로 한다
+function floorHeight(x, z) {
+  const e = Math.sqrt((x * x) / (POND_RX * POND_RX) + (z * z) / (POND_RZ * POND_RZ));
+  return Math.min(FLOOR_Y + Math.max(0, e - 0.78) * 11 + Math.sin(x * 1.3) * Math.cos(z * 1.1) * 0.12, 0.05);
+}
+
 function randomPondPoint(margin = 1.6) {
   for (let i = 0; i < 30; i++) {
     const x = rand(-POND_RX, POND_RX);
     const z = rand(-POND_RZ, POND_RZ);
-    if (insidePond(x, z, margin)) return new THREE.Vector3(x, rand(SWIM_BOTTOM + 0.3, SWIM_TOP - 0.2), z);
+    if (insidePond(x, z, margin)) {
+      const hi = SWIM_TOP - 0.2;
+      const lo = Math.min(hi, Math.max(SWIM_BOTTOM + 0.3, floorHeight(x, z) + 0.8));
+      return new THREE.Vector3(x, rand(lo, hi), z);
+    }
   }
   return new THREE.Vector3(0, -1.5, 0);
 }
+
+// 두 선분 사이의 가장 가까운 두 점 (캡슐 충돌용)
+const _d1 = new THREE.Vector3();
+const _d2 = new THREE.Vector3();
+const _r = new THREE.Vector3();
+function closestSegSeg(p1, q1, p2, q2, c1, c2) {
+  _d1.subVectors(q1, p1);
+  _d2.subVectors(q2, p2);
+  _r.subVectors(p1, p2);
+  const a = _d1.dot(_d1);
+  const e = _d2.dot(_d2);
+  const f = _d2.dot(_r);
+  let s = 0;
+  let t = 0;
+  if (a > 1e-6 || e > 1e-6) {
+    if (a <= 1e-6) t = clamp(f / e, 0, 1);
+    else {
+      const c = _d1.dot(_r);
+      if (e <= 1e-6) s = clamp(-c / a, 0, 1);
+      else {
+        const b = _d1.dot(_d2);
+        const denom = a * e - b * b;
+        s = denom > 1e-6 ? clamp((b * f - c * e) / denom, 0, 1) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) {
+          t = 0;
+          s = clamp(-c / a, 0, 1);
+        } else if (t > 1) {
+          t = 1;
+          s = clamp((b - c) / a, 0, 1);
+        }
+      }
+    }
+  }
+  c1.copy(p1).addScaledVector(_d1, s);
+  c2.copy(p2).addScaledVector(_d2, t);
+}
+
+const GRAVITY = 9.8;
+const WALL_RX = POND_RX - 1;
+const WALL_RZ = POND_RZ - 1;
 
 // 폭포 i번째 단의 물고기 위치(물이 넘치는 턱 바로 앞)
 function tierPoint(i, xOff = 0) {
@@ -114,6 +165,8 @@ class Fish {
     this.swayY = 0;
     this.yTop = SWIM_TOP;
     this.opacity = 1;
+    this.nextWake = 0;
+    this.nextBonk = 0;
 
     // 클릭 판정용 투명 구
     this.hit = new THREE.Mesh(
@@ -189,6 +242,27 @@ class Fish {
     return total ? done / total : 0;
   }
 
+  // 몸통을 캡슐로 본다: 반지름·반길이(꼬리 제외)
+  get radius() {
+    return (this.world.models[this.species]?.radius ?? 0.35) * this.scaleNow;
+  }
+
+  get halfLen() {
+    return FISH_LEN * 0.3 * this.scaleNow;
+  }
+
+  bodyDir(out) {
+    const y = this.root.rotation.y;
+    const x = this.root.rotation.x + this.tiltX;
+    return out.set(Math.sin(y) * Math.cos(x), -Math.sin(x), Math.cos(y) * Math.cos(x));
+  }
+
+  // 바닥에 닿지 않는 최소 높이 (몸이 기울면 머리·꼬리 끝까지 고려)
+  minY() {
+    const pitch = Math.abs(Math.sin(this.root.rotation.x + this.tiltX));
+    return floorHeight(this.pos.x, this.pos.z) + this.radius * 0.8 + pitch * this.halfLen;
+  }
+
   get targetScale() {
     if (this.isNpc) return 0.8;
     return 1 + this.progress * 0.65;
@@ -230,17 +304,16 @@ class Fish {
   }
 
   // ---------- 행동 ----------
+  // 도약: 수면을 향해 차고 올라 → 공중에서는 중력만 → 물에 떨어지면 물의 저항으로 감속
   leap() {
     if (this.action) return;
-    const dir = tmpV.set(this.vel.x, 0, this.vel.z);
-    if (dir.lengthSq() < 0.001) dir.set(0, 0, 1);
-    dir.normalize();
-    const from = this.pos.clone();
-    const to = from.clone().addScaledVector(dir, 3.2);
-    if (!insidePond(to.x, to.z, 1.2)) to.set(from.x * 0.4, from.y, from.z * 0.4);
-    to.y = clamp(from.y, SWIM_BOTTOM, SWIM_TOP);
+    const dir = this.heading(new THREE.Vector3());
+    // 착지할 곳이 연못 밖이면 연못 가운데 쪽으로 뛴다
+    const land = tmpV.copy(this.pos).addScaledVector(dir, 3.4);
+    if (!insidePond(land.x, land.z, 1.4)) dir.set(-this.pos.x, 0, -this.pos.z).normalize();
     this.move = null;
-    this.action = { type: 'leap', t: 0, dur: 1.5, from, to, splashed: 0 };
+    this.manual = null;
+    this.action = { type: 'leap', phase: 'rise', t: 0, dir };
   }
 
   ascend(onDone) {
@@ -438,7 +511,7 @@ class Fish {
       }
       case 'forage': {
         // 바닥으로 내려가 코를 박고 모래를 뒤적
-        const floorY = FLOOR_Y + 0.5;
+        const floorY = floorHeight(this.pos.x, this.pos.z) + this.radius * 0.8 + this.halfLen * 0.7;
         const h = this.heading(tmpV);
         if (this.pos.y > floorY + 0.15 && k < 0.8) {
           out.set(h.x * 0.6, -1.4, h.z * 0.6);
@@ -450,7 +523,7 @@ class Fish {
             m.nextFx = m.t + 0.35;
             for (let i = 0; i < 4; i++) {
               w.spawnParticle(
-                tmpV2.set(this.pos.x + h.x * 0.5, FLOOR_Y + 0.2, this.pos.z + h.z * 0.5),
+                tmpV2.set(this.pos.x + h.x * 0.5, floorHeight(this.pos.x, this.pos.z) + 0.15, this.pos.z + h.z * 0.5),
                 0xc9b48a,
                 new THREE.Vector3(rand(-0.6, 0.6), rand(0.3, 0.9), rand(-0.6, 0.6)),
                 1.2,
@@ -527,14 +600,16 @@ class Fish {
       let speed = this.speed;
       if (following) {
         // 짝꿍 옆에서 나란히
-        const side = tmpV.set(-leader.vel.z, 0, leader.vel.x).normalize().multiplyScalar(1.1);
+        const gap = (this.radius + leader.radius) * 1.3 + 0.35;
+      const side = tmpV.set(-leader.vel.z, 0, leader.vel.x).normalize().multiplyScalar(gap);
         this.target.copy(leader.pos).add(side).addScaledVector(leader.vel, -0.25);
         speed = Math.max(leader.vel.length(), 0.6) * 1.15;
       } else if (sleeping) {
         // 수초 아래, 바닥 가까이에서 쉼
         if (!this.sleepSpot) {
           const k = w.weeds[Math.floor(hashStr(this.id) * w.weeds.length)];
-          this.sleepSpot = new THREE.Vector3(k.x + 0.6, FLOOR_Y + 0.55, k.z + 0.4);
+          this.sleepSpot = new THREE.Vector3(k.x + 0.6, 0, k.z + 0.4);
+          this.sleepSpot.y = floorHeight(this.sleepSpot.x, this.sleepSpot.z) + this.radius + 0.15;
         }
         this.target.copy(this.sleepSpot);
         speed = 0.25;
@@ -555,38 +630,88 @@ class Fish {
       desired.setLength(Math.min(speed, dist * 1.5));
     }
 
-    // 다른 물고기와 너무 붙지 않게
+    // 개인 공간: 부딪히기 전에 살짝 비켜 감 (실제 충돌은 World.resolveCollisions)
     for (const o of w.fishes.values()) {
-      if (o === this || o.action) continue;
+      if (o === this || o.action || o.id === this.data.followId) continue;
       const d = this.pos.distanceTo(o.pos);
-      const minD = 1.0 * (this.scaleNow + o.scaleNow) * 0.6;
-      if (d < minD && d > 0.0001) {
-        tmpV2.subVectors(this.pos, o.pos).setLength((minD - d) * 2.5);
+      const space = (this.radius + o.radius) * 1.6 + this.halfLen;
+      if (d < space && d > 0.0001) {
+        tmpV2.subVectors(this.pos, o.pos).setLength((space - d) * 1.2);
         desired.add(tmpV2);
       }
     }
+    // 벽(연못 가장자리)이 가까워지면 미리 안쪽으로
+    const e0 = (this.pos.x * this.pos.x) / (WALL_RX * WALL_RX) + (this.pos.z * this.pos.z) / (WALL_RZ * WALL_RZ);
+    if (e0 > 0.72) {
+      tmpV2.set(this.pos.x / (WALL_RX * WALL_RX), 0, this.pos.z / (WALL_RZ * WALL_RZ)).normalize();
+      desired.addScaledVector(tmpV2, -(e0 - 0.72) * 7);
+    }
+    // 바닥이 가까워지면 미리 위로
+    const clearance = this.pos.y - this.minY();
+    if (clearance < 0.35 && this.move?.id !== 'forage' && !sleeping) desired.y += (0.35 - clearance) * 3;
 
     const resp = this.move?.id === 'dash' || this.move?.id === 'roll' ? 6 : this.move?.id === 'glide' ? 0.6 : steering ? 3 : 1.6;
     this.vel.lerp(desired, Math.min(1, dt * resp));
     this.pos.addScaledVector(this.vel, dt);
 
-    // 연못 안에 가두기
-    const rx = POND_RX - 1;
-    const rz = POND_RZ - 1;
-    const e = (this.pos.x * this.pos.x) / (rx * rx) + (this.pos.z * this.pos.z) / (rz * rz);
-    if (e > 1) {
-      const k = 1 / Math.sqrt(e);
-      this.pos.x *= k;
-      this.pos.z *= k;
-      if (steering) this.steerYaw = Math.atan2(-this.pos.x, -this.pos.z) * 0.15 + this.steerYaw * 0.85;
+    this.constrain(dt, true, steering);
+
+    // 수면 가까이 빠르게 지나가면 물결이 남음
+    if (this.pos.y > -0.6 && this.vel.length() > 1.3 && time > this.nextWake) {
+      this.nextWake = time + 0.3;
+      w.addRipple(this.pos.x, this.pos.z, 0.22);
     }
-    const bob = this.move ? 0 : Math.sin(time * 1.3 + this.pos.x) * 0.002;
-    this.pos.y = clamp(this.pos.y + bob, FLOOR_Y + 0.4, this.yTop);
 
     // 수직으로만 움직이는 동작(뻐끔, 꼬리 춤)은 방향을 틀지 않는다
     const faceV = this.move && (this.move.id === 'nibble' || this.move.id === 'wag') ? tmpV2.set(this.vel.x, 0, this.vel.z) : this.vel;
     if (this.move?.id === 'nibble' || this.move?.id === 'forage') faceV.y = 0;
     this.face(faceV, dt, this.move?.id === 'circle' ? 8 : 4);
+  }
+
+  // 벽·바닥·수면 충돌: 위치를 되돌리고, 부딪힌 방향의 속도는 튕겨 냄
+  constrain(dt, underwater = true, steering = false) {
+    const w = this.world;
+    // 연못 가장자리 (타원 벽)
+    const e = (this.pos.x * this.pos.x) / (WALL_RX * WALL_RX) + (this.pos.z * this.pos.z) / (WALL_RZ * WALL_RZ);
+    if (e > 1) {
+      const k = 1 / Math.sqrt(e);
+      this.pos.x *= k;
+      this.pos.z *= k;
+      const n = tmpV2.set(this.pos.x / (WALL_RX * WALL_RX), 0, this.pos.z / (WALL_RZ * WALL_RZ)).normalize();
+      const vn = this.vel.dot(n);
+      if (vn > 0) this.vel.addScaledVector(n, -1.3 * vn); // 살짝 튕김
+      if (steering && this.steerYaw != null) this.steerYaw = Math.atan2(-this.pos.x, -this.pos.z) * 0.15 + this.steerYaw * 0.85;
+    }
+    if (!underwater) return;
+    // 바닥
+    const floor = this.minY();
+    if (this.pos.y < floor) {
+      const impact = -this.vel.y;
+      this.pos.y = floor;
+      if (this.vel.y < 0) this.vel.y *= -0.25;
+      if (impact > 1.2 && performance.now() > this.nextBonk) {
+        this.nextBonk = performance.now() + 600;
+        const fy = floorHeight(this.pos.x, this.pos.z) + 0.1;
+        for (let i = 0; i < 6; i++) {
+          w.spawnParticle(
+            tmpV2.set(this.pos.x, fy, this.pos.z),
+            0xc9b48a,
+            new THREE.Vector3(rand(-0.8, 0.8), rand(0.3, 1), rand(-0.8, 0.8)),
+            1.1,
+            0.22,
+            -0.6,
+            THREE.NormalBlending,
+          );
+        }
+      }
+    }
+    // 수면 (도약할 때만 넘어감)
+    const top = this.yTop - (this.move?.id === 'nibble' ? 0 : this.radius * 0.2);
+    if (this.pos.y > top) {
+      // 물에 떨어진 직후처럼 많이 넘었을 때도 부드럽게 내려오게
+      this.pos.y += (top - this.pos.y) * Math.min(1, dt * 6);
+      if (this.vel.y > 0) this.vel.y *= 0.2;
+    }
   }
 
   face(v, dt, k = 4) {
@@ -606,26 +731,41 @@ class Fish {
     const w = this.world;
 
     if (a.type === 'leap') {
-      a.t += dt / a.dur;
-      const t = Math.min(1, a.t);
-      const prev = this.pos.clone();
-      this.pos.lerpVectors(a.from, a.to, t);
-      this.pos.y = THREE.MathUtils.lerp(a.from.y, a.to.y, t) + Math.sin(t * Math.PI) * 3.2;
-      const v = tmpV.subVectors(this.pos, prev).divideScalar(Math.max(dt, 1e-4));
-      this.face(v, dt, 10);
-      // 물 밖으로 나갈 때·들어올 때 물보라
-      if (a.splashed === 0 && this.pos.y > 0) {
-        a.splashed = 1;
-        w.splash(this.pos, 1);
-      } else if (a.splashed === 1 && t > 0.5 && this.pos.y < 0) {
-        a.splashed = 2;
-        w.splash(this.pos, 0.8);
+      a.t += dt;
+      if (a.phase === 'rise') {
+        // 꼬리를 힘차게 치며 수면으로
+        tmpV.set(a.dir.x * 2.4, 7, a.dir.z * 2.4);
+        this.vel.lerp(tmpV, Math.min(1, dt * 7));
+        this.animRate = 3.5;
+        if (this.pos.y >= 0 || a.t > 1.4) {
+          a.phase = 'air';
+          this.pos.y = Math.max(this.pos.y, 0);
+          this.vel.y = Math.max(this.vel.y, 6.6); // 최고 높이 약 2.2
+          w.splash(this.pos, 1);
+          w.sfx?.splash();
+        }
+      } else if (a.phase === 'air') {
+        // 공중: 중력만 받는 포물선
+        this.vel.y -= GRAVITY * dt;
+        this.animRate = 1.2;
+        if (this.pos.y < 0 && this.vel.y < 0) {
+          a.phase = 'water';
+          a.t = 0;
+          w.splash(this.pos, 0.8);
+        }
+      } else {
+        // 물속: 강한 저항 + 부력으로 헤엄 높이로 돌아옴
+        this.vel.multiplyScalar(Math.exp(-3.2 * dt));
+        if (this.pos.y > SWIM_TOP - 0.2) this.vel.y -= 1.5 * dt;
+        this.animRate = 0.8;
+        if (a.t > 1 || this.vel.length() < 0.6) {
+          this.action = null;
+          this.target = randomPondPoint();
+        }
       }
-      if (a.t >= 1) {
-        this.action = null;
-        this.vel.copy(v).setLength(0.8);
-        this.target = randomPondPoint();
-      }
+      this.pos.addScaledVector(this.vel, dt);
+      this.constrain(dt, a.phase === 'water');
+      this.face(this.vel, dt, 10);
       return;
     }
 
@@ -736,6 +876,7 @@ export class World {
     this.sfx = null;
     this.timer = new THREE.Timer();
     this.npcSeq = 0;
+    this.floorHeight = floorHeight;
     this.view = { mode: 'pond', fishId: null };
     this.keys = new Set();
     this.under = false;
@@ -796,11 +937,15 @@ export class World {
       SPECIES_IDS.map(async (id) => {
         const g = await loader.loadAsync(SPECIES[id].file);
         const box = new THREE.Box3().setFromObject(g.scene);
+        const size = box.getSize(new THREE.Vector3());
+        // 몸 길이를 FISH_LEN 으로 맞췄을 때의 몸통 반지름 (지느러미 끝은 조금 겹쳐도 되게 0.8배)
+        const k = FISH_LEN / size.z;
         this.models[id] = {
           scene: g.scene,
           clip: g.animations[0] || null,
-          size: box.getSize(new THREE.Vector3()),
+          size,
           center: box.getCenter(new THREE.Vector3()),
+          radius: (Math.max(size.x, size.y) * k * 0.5) * 0.8,
         };
         onProgress?.(++n / SPECIES_IDS.length);
       }),
@@ -879,16 +1024,11 @@ export class World {
   // ---------- 연못 ----------
   buildPond() {
     // 바닥 모래
-    const floorG = new THREE.CircleGeometry(1, 64, 0, Math.PI * 2);
-    floorG.scale(POND_RX + 1, POND_RZ + 1, 1);
+    // 촘촘한 격자로 만들어야 floorHeight() 와 실제 바닥 모양이 맞는다
+    const floorG = new THREE.PlaneGeometry((POND_RX + 1.4) * 2, (POND_RZ + 1.4) * 2, 110, 80);
     floorG.rotateX(-Math.PI / 2);
     const fp = floorG.attributes.position;
-    for (let i = 0; i < fp.count; i++) {
-      const x = fp.getX(i);
-      const z = fp.getZ(i);
-      const e = Math.sqrt((x * x) / (POND_RX * POND_RX) + (z * z) / (POND_RZ * POND_RZ));
-      fp.setY(i, FLOOR_Y + Math.max(0, e - 0.8) * 9 + Math.sin(x * 1.3) * Math.cos(z * 1.1) * 0.12);
-    }
+    for (let i = 0; i < fp.count; i++) fp.setY(i, floorHeight(fp.getX(i), fp.getZ(i)));
     floorG.computeVertexNormals();
     const floor = new THREE.Mesh(floorG, new THREE.MeshStandardMaterial({ color: 0x5f6f58, roughness: 1 }));
     this.scene.add(floor);
@@ -1128,10 +1268,11 @@ export class World {
       const g = new THREE.ConeGeometry(0.12, h, 5, 6, true);
       g.translate(0, h / 2, 0);
       const weed = new THREE.Mesh(g, weedM);
-      weed.position.set(p.x, FLOOR_Y, p.z);
+      const base = floorHeight(p.x, p.z);
+      weed.position.set(p.x, base - 0.05, p.z);
       weed.userData.ph = rand(0, 6);
       this.scene.add(weed);
-      this.weeds.push({ mesh: weed, x: p.x, z: p.z });
+      this.weeds.push({ mesh: weed, x: p.x, z: p.z, base, h, bx: 0, bz: 0 });
     }
 
     // 연잎·연꽃
@@ -1145,6 +1286,7 @@ export class World {
       pad.rotation.x = -Math.PI / 2;
       pad.rotation.z = rand(0, 6);
       pad.position.set(p.x, 0.03, p.z);
+      pad.userData = { ax: p.x, az: p.z, ox: 0, oz: 0, lift: 0, r };
       this.scene.add(pad);
       this.pads.push(pad);
       if (i % 3 === 0) {
@@ -1159,6 +1301,7 @@ export class World {
         }
         flower.position.set(p.x + 0.15, 0.03, p.z);
         this.scene.add(flower);
+        pad.userData.flower = flower;
       }
     }
 
@@ -1448,6 +1591,129 @@ export class World {
     }
   }
 
+  // ---------- 물리: 물고기끼리 부딪힘 ----------
+  // 물고기 몸을 캡슐(선분 + 반지름)로 보고, 겹치면 무게 비율로 밀어내고 속도를 튕긴다
+  resolveCollisions(dt, time) {
+    const list = [];
+    for (const f of this.fishes.values()) {
+      if (f.action && !(f.action.type === 'leap' && f.action.phase !== 'air')) continue;
+      const d = f.bodyDir(new THREE.Vector3()).multiplyScalar(f.halfLen);
+      list.push({ f, a: f.pos.clone().add(d), b: f.pos.clone().sub(d), r: f.radius, m: f.radius ** 3 });
+    }
+    const c1 = new THREE.Vector3();
+    const c2 = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const A = list[i];
+        const B = list[j];
+        const reach = A.r + B.r;
+        if (A.f.pos.distanceToSquared(B.f.pos) > (reach + A.f.halfLen + B.f.halfLen) ** 2) continue;
+        closestSegSeg(A.a, A.b, B.a, B.b, c1, c2);
+        n.subVectors(c1, c2);
+        let dist = n.length();
+        if (dist >= reach) continue;
+        if (dist < 1e-4) {
+          n.set(rand(-1, 1), 0, rand(-1, 1));
+          dist = 1e-4;
+        }
+        n.normalize();
+        // 겹친 만큼 밀어내기 (가벼운 쪽이 더 많이)
+        const overlap = reach - dist;
+        const wa = B.m / (A.m + B.m);
+        const wb = A.m / (A.m + B.m);
+        A.f.pos.addScaledVector(n, overlap * wa);
+        B.f.pos.addScaledVector(n, -overlap * wb);
+        // 다가오던 속도만 튕기기 (반발 계수 0.35)
+        const vn = tmpV.subVectors(A.f.vel, B.f.vel).dot(n);
+        if (vn < 0) {
+          const jImp = (-(1 + 0.35) * vn) / (1 / A.m + 1 / B.m);
+          A.f.vel.addScaledVector(n, jImp / A.m);
+          B.f.vel.addScaledVector(n, -jImp / B.m);
+          if (-vn > 0.9) this.bonk(A.f, B.f, n, c1.lerp(c2, 0.5), time);
+        }
+        for (const f of [A.f, B.f]) {
+          const floor = f.minY();
+          if (f.pos.y < floor) f.pos.y = floor;
+        }
+      }
+    }
+  }
+
+  // 세게 부딪히면: 몸을 흔들고 물방울, 놀란 물고기는 반대쪽으로 질주
+  bonk(a, b, n, at, time) {
+    a.wiggle = Math.max(a.wiggle, 0.5);
+    b.wiggle = Math.max(b.wiggle, 0.5);
+    for (let i = 0; i < 5; i++) {
+      this.spawnParticle(at, 0xdff6ff, new THREE.Vector3(rand(-0.5, 0.5), rand(0.4, 1.2), rand(-0.5, 0.5)), 0.8, 0.14, 0.5);
+    }
+    if (time - (this.lastBonkSfx || 0) > 0.4) {
+      this.lastBonkSfx = time;
+      this.sfx?.bubble();
+    }
+    for (const [f, sign] of [
+      [a, 1],
+      [b, -1],
+    ]) {
+      if (f.isMe || f.move || f.action || f.data.sleeping || Math.random() < 0.4) continue;
+      f.doMove('dash');
+      if (f.move) f.move.dir.set(n.x * sign, 0, n.z * sign).normalize();
+    }
+  }
+
+  // 수초는 물고기에 밀려 휘었다가 돌아오고, 연잎은 밀려나며 들썩인다
+  pushPlants(dt, time) {
+    const fishes = [...this.fishes.values()].filter((f) => !f.action || f.action.type === 'leap');
+    for (const w of this.weeds) {
+      let tx = 0;
+      let tz = 0;
+      for (const f of fishes) {
+        if (f.pos.y > w.base + w.h + 0.3) continue;
+        const dx = w.x - f.pos.x;
+        const dz = w.z - f.pos.z;
+        const d = Math.hypot(dx, dz);
+        const reach = f.radius + f.halfLen * 0.6 + 0.3;
+        if (d < reach && d > 1e-4) {
+          const k = (reach - d) / reach;
+          tx += (dx / d) * k * 0.9;
+          tz += (dz / d) * k * 0.9;
+          f.vel.multiplyScalar(1 - Math.min(0.5, dt * 1.2 * k)); // 수초 사이는 조금 느리게
+        }
+      }
+      const pushing = tx !== 0 || tz !== 0;
+      const rate = Math.min(1, dt * (pushing ? 8 : 2.2));
+      w.bx += (clamp(tx, -0.9, 0.9) - w.bx) * rate;
+      w.bz += (clamp(tz, -0.9, 0.9) - w.bz) * rate;
+      const ph = w.mesh.userData.ph;
+      w.mesh.rotation.z = -w.bx + Math.sin(time * 0.9 + ph) * 0.12;
+      w.mesh.rotation.x = w.bz + Math.cos(time * 0.7 + ph) * 0.08;
+    }
+    for (const [i, p] of this.pads.entries()) {
+      const u = p.userData;
+      let px = 0;
+      let pz = 0;
+      let lift = 0;
+      for (const f of fishes) {
+        if (f.pos.y < -1.0) continue;
+        const dx = p.position.x - f.pos.x;
+        const dz = p.position.z - f.pos.z;
+        const d = Math.hypot(dx, dz);
+        const reach = u.r + f.radius;
+        if (d < reach && d > 1e-4) {
+          const k = (reach - d) / reach;
+          px += (dx / d) * k * 1.6;
+          pz += (dz / d) * k * 1.6;
+          lift = Math.max(lift, k * 0.12 * clamp((f.pos.y + 1) * 1.5, 0, 1));
+        }
+      }
+      u.ox += (px * 0.8 - u.ox * 0.6) * dt;
+      u.oz += (pz * 0.8 - u.oz * 0.6) * dt;
+      u.lift += (lift - u.lift) * Math.min(1, dt * 6);
+      p.position.set(u.ax + u.ox, 0.03 + Math.sin(time + i) * 0.015 + u.lift, u.az + u.oz);
+      if (u.flower) u.flower.position.set(p.position.x + 0.15, p.position.y, p.position.z);
+    }
+  }
+
   // ---------- 시점 ----------
   // pond: 연못 전체 / chase: 물고기 따라가기(3인칭) / eye: 물고기 눈(1인칭)
   applyPondLimits() {
@@ -1565,7 +1831,10 @@ export class World {
       }
     }
     if (c.enabled) c.update();
-    if (v.mode === 'chase') this.camera.position.y = Math.max(this.camera.position.y, FLOOR_Y + 0.35);
+    if (v.mode === 'chase') {
+      const cp = this.camera.position;
+      if (insidePond(cp.x, cp.z, -1)) cp.y = Math.max(cp.y, floorHeight(cp.x, cp.z) + 0.35);
+    }
 
     // 물속인지에 따라 안개·수면 모습 바꾸기
     const p = this.camera.position;
@@ -1650,20 +1919,16 @@ export class World {
     this.fallsMat.uniforms.uTime.value = time;
     for (const f of [...this.fishes.values()]) f.update(dt, time);
 
-    // 수초 흔들림
-    for (const w of this.weeds) {
-      w.mesh.rotation.z = Math.sin(time * 0.9 + w.mesh.userData.ph) * 0.12;
-      w.mesh.rotation.x = Math.cos(time * 0.7 + w.mesh.userData.ph) * 0.08;
-    }
+    this.resolveCollisions(dt, time);
+    this.pushPlants(dt, time);
     this.updateCamera(dt);
 
-    for (const [i, p] of this.pads.entries()) p.position.y = 0.03 + Math.sin(time + i) * 0.015;
 
     // 물방울
     const bp = this.bubbles.geometry.attributes.position;
     for (let i = 0; i < bp.count; i++) {
       let y = bp.getY(i) + dt * this.bubbleSeeds[i];
-      if (y > -0.05) y = FLOOR_Y + 0.2;
+      if (y > -0.05) y = floorHeight(bp.getX(i), bp.getZ(i)) + 0.2;
       bp.setY(i, y);
       bp.setX(i, bp.getX(i) + Math.sin(time * 2 + i) * 0.002);
     }
