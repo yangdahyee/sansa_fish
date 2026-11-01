@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>소원 연못 — 소원을 물고기에 담아 놓아주세요</title>
-  <meta name="description" content="소원을 물고기에 담아 연못에 놓아주세요. 사람들이 먹이를 주며 응원하고, 먹이 21번이 모이면 용이 되어 하늘의 별이 됩니다." />
+  <meta name="description" content="소원을 물고기에 담아 연못에 놓아주세요. 먹이를 5번 주면 소원이 이루어져 하늘의 별이 됩니다." />
   <meta name="theme-color" content="#0b1a2e" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" />
@@ -31,7 +31,7 @@
   <!-- 상단 바 -->
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark">願</span>
+      <span class="brand-mark">🐟</span>
       <div>
         <h1>소원 연못</h1>
         <p class="sub" id="stats">연못을 여는 중…</p>
@@ -46,10 +46,11 @@
 
   <!-- 내 소원 패널 -->
   <aside id="panel" class="panel">
+    <button class="close panel-close mobile-only" id="panelClose" aria-label="닫기">×</button>
     <!-- 소원이 없을 때 -->
     <section id="releaseView" hidden>
       <h2>소원 하나를 물고기에 담아 보세요</h2>
-      <p class="hint">놓아준 물고기는 연못을 헤엄쳐요. 지나가던 사람들이 <b>먹이</b>를 주며 응원하고, 먹이가 <b id="goalText">21</b>번 모이면 용이 되어 하늘의 별이 됩니다.</p>
+      <p class="hint">소원을 담은 물고기에게 <b>먹이</b>를 <b id="goalText">5</b>번 주면 소원이 이루어져 하늘의 별이 돼요. 내가 줘도, 친구가 줘도 좋아요.</p>
 
       <label class="field">
         <span>나의 소원</span>
@@ -81,7 +82,8 @@
         <p id="myLabel" class="falls-label"></p>
       </div>
       <button id="btnShareWish" class="share-wish">🔗 내 소원에 먹이 주러 와 줘 — 링크 복사</button>
-      <p class="hint tip">💡 다른 물고기를 눌러 소원을 읽고 🍚 먹이로 응원해 보세요. 같은 소원에는 하루 한 번 줄 수 있어요.</p>
+      <button id="btnFeedMine" class="primary feed-mine">✨ 내 소원에 먹이 주기</button>
+      <p class="hint tip">💡 다른 물고기를 눌러 소원을 읽고 먹이로 응원해 보세요. 연못을 누르면 내 물고기가 그곳으로 헤엄쳐요.</p>
     </section>
 
     <!-- 별이 된 내 소원 -->
@@ -101,14 +103,14 @@
       <p id="cardLabel" class="falls-label"></p>
     </div>
     <div class="card-actions">
-      <button id="btnFeed" class="primary small">🍚 먹이 주며 응원하기</button>
+      <button id="btnFeed" class="primary small">✨ 먹이 주기</button>
       <button id="btnReport" class="small report" title="욕설·광고·개인정보 등">🚩 신고</button>
     </div>
   </div>
 
   <!-- 처음 온 사람을 위한 안내 -->
   <div class="bottom-bars">
-    <p id="steerHint" class="steer-hint">물고기를 누르면 소원이 보여요 · 가만히 보고 있으면 물고기가 소원을 띄워요</p>
+    <p id="steerHint" class="steer-hint">물고기를 누르면 소원이 보여요 · 연못을 누르면 내 물고기가 그곳으로 헤엄쳐요</p>
   </div>
 
   <!-- 방생 의식 -->
@@ -161,6 +163,16 @@
       </div>
       <ul class="list-items" id="listItems"></ul>
     </div>
+  </div>
+
+  <!-- 휴대폰: 화면은 넓게, 아래 작은 막대 하나 -->
+  <div id="miniBar" class="mini-bar">
+    <div class="mini-info">
+      <p id="miniText"></p>
+      <p id="miniSub"></p>
+    </div>
+    <button id="miniFeed" class="primary small" hidden>✨ 먹이</button>
+    <button id="miniOpen" class="small"></button>
   </div>
 
   <div id="toasts" class="toasts"></div>

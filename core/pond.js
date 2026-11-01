@@ -9,7 +9,7 @@ const SPECIES = ['berry', 'lemon', 'coral', 'neon'];
 const MAX_TEXT = 60;
 const MAX_BODY = 4096;
 const REPORT_HIDE = 3; // 서로 다른 사람에게 이만큼 신고되면 자동으로 숨김 (관리자가 다시 보이게 할 수 있음)
-const FEED_PER_IP = 3; // 같은 인터넷 주소에서 한 소원에 하루 최대 (휴대폰 통신사는 주소를 여럿이 함께 쓰므로 1이 아니라 3)
+const FEED_GAP_MS = 1200; // 같은 사람이 먹이를 연달아 줄 수 있는 간격
 
 // 하루 기준은 한국 시간
 export const dayKey = (t = Date.now()) => new Date(t + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -62,7 +62,7 @@ export class Pond {
   /**
    * @param {{ goal?: number, persist: (w: Wish) => void | Promise<void>, broadcast: (msg: any) => void, online: () => number }} opts
    */
-  constructor({ goal = 21, persist, remove, broadcast, online, adminToken = '' }) {
+  constructor({ goal = 5, persist, remove, broadcast, online, adminToken = '' }) {
     this.goal = goal;
     this.persist = persist;
     this.remove = remove || (() => {});
@@ -73,6 +73,7 @@ export class Pond {
     this.wishes = [];
     this.byId = new Map();
     this.buckets = new Map();
+    this.lastFeed = new Map();
   }
 
   /** @param {Wish[]} list */
@@ -101,7 +102,8 @@ export class Pond {
       createdAt: w.createdAt,
       starAt: w.starAt,
       mine: !!me && w.owner === me,
-      fedToday: !!me && w.fedBy[me] === dayKey(),
+      feeders: Object.keys(w.fedBy || {}).length, // 응원한 사람 수
+      myFeeds: me ? Number(w.fedBy?.[me]) || 0 : 0,
       reportedByMe: !!me && !!w.reportedBy?.[me],
       hidden: !!me && w.owner === me ? w.hidden : undefined, // 숨김 여부는 주인에게만
     };
@@ -253,7 +255,7 @@ export class Pond {
       return json(200, { goal: this.goal, wish: this.view(w, owner) });
     }
 
-    // 먹이(응원): 같은 소원에는 하루 한 번, 내 소원에는 못 줌
+    // 먹이: 내가 주든 남이 주든 goal 번이면 별. 연타만 막는다 (한 사람 1.2초에 한 번, 주소당 시간 120번)
     const feed = /^\/api\/wishes\/([a-f0-9]{8,16})\/feed$/.exec(p);
     if (feed && method === 'POST') {
       const who = await hashUid(body.uid);
@@ -261,28 +263,21 @@ export class Pond {
       if (!who) return json(400, { error: 'bad_uid' });
       if (!w || w.hidden) return json(404, { error: 'not_found' });
       if (w.status !== 'swimming') return json(409, { error: 'already_star' });
-      if (w.owner === who) return json(403, { error: 'own_wish' });
-      if (w.fedBy[who] === dayKey()) return json(429, { error: 'fed_today' });
-      // 아이디를 새로 만들어 몰아주기 막기: 같은 인터넷 주소에서는 한 소원에 하루 FEED_PER_IP 번까지
-      const ipKey = await sha(`ip:${ip}`, 8);
-      const today = dayKey();
-      const ipRec = w.fedIp[ipKey]?.d === today ? w.fedIp[ipKey] : { d: today, n: 0 };
-      if (ipRec.n >= FEED_PER_IP) return json(429, { error: 'fed_today' });
-      if (this.limited(`f:${ip}`, 60, 3600 * 1000)) return json(429, { error: 'too_many' });
-      ipRec.n++;
-      w.fedIp[ipKey] = ipRec;
-      // 오래된 주소 기록은 정리
-      for (const k of Object.keys(w.fedIp)) if (w.fedIp[k].d !== today) delete w.fedIp[k];
-      w.fedBy[who] = dayKey();
+      const now = Date.now();
+      if (now - (this.lastFeed.get(who) || 0) < FEED_GAP_MS) return json(429, { error: 'too_fast' });
+      if (this.limited(`f:${ip}`, 120, 3600 * 1000)) return json(429, { error: 'too_many' });
+      this.lastFeed.set(who, now);
+      if (this.lastFeed.size > 20000) this.lastFeed.clear();
+      w.fedBy[who] = (Number(w.fedBy[who]) || 0) + 1; // 누가 몇 번 줬나 (응원한 사람 수 세기용)
       w.feeds++;
       let becameStar = false;
       if (w.feeds >= this.goal) {
         w.status = 'star';
-        w.starAt = Date.now();
+        w.starAt = now;
         becameStar = true;
       }
       await this.persist(w);
-      this.broadcast({ t: 'wish:fed', id: w.id, feeds: w.feeds });
+      this.broadcast({ t: 'wish:fed', id: w.id, feeds: w.feeds, feeders: Object.keys(w.fedBy).length });
       if (becameStar) this.broadcast({ t: 'wish:star', wish: this.view(w, null) });
       return json(200, { goal: this.goal, wish: this.view(w, who), becameStar });
     }

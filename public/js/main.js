@@ -64,7 +64,7 @@ function celebrate({ title, dream, meta = '' }) {
     el.style.animationDelay = `${delay}s`;
     card.appendChild(el);
   };
-  mk('cele-orn', '✦ 登 龍 ✦', 0);
+  mk('cele-orn', '✦ 소원 성취 ✦', 0);
   mk('big', title, 0.15);
   mk('cele-dream', dream, 0.55);
   if (meta) mk('cele-meta', meta, 1.0);
@@ -82,9 +82,9 @@ function celebrate({ title, dream, meta = '' }) {
     setTimeout(() => p.remove(), 9500);
   }
   clearTimeout(celebrate.t);
-  celebrate.t = setTimeout(() => box.classList.add('out'), 6200);
+  celebrate.t = setTimeout(() => box.classList.add('out'), 4600);
   clearTimeout(celebrate.t2);
-  celebrate.t2 = setTimeout(() => (box.hidden = true), 7000);
+  celebrate.t2 = setTimeout(() => (box.hidden = true), 5400);
 }
 
 const fmtDate = (t) => new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -164,6 +164,7 @@ async function main() {
       b.onclick = () => {
         pickedSpecies = id;
         renderSpecies();
+        syncAvatar(); // 고른 물고기로 내 물고기가 바뀜
         sfx.bubble();
       };
       box.appendChild(b);
@@ -182,7 +183,7 @@ async function main() {
       $('myFill').style.width = `${Math.min(100, (w.feeds / GOAL) * 100)}%`;
       $('myLabel').textContent = w.hidden
         ? '🙈 신고가 들어와 잠시 숨겨졌어요. 관리자가 확인하면 다시 보여요'
-        : w.feeds === 0 ? `아직 먹이 0 / ${GOAL} — 링크를 보내 첫 응원을 받아 보세요` : `🍚 먹이 ${w.feeds} / ${GOAL} · ${GOAL - w.feeds}번 더 모이면 별이 돼요`;
+        : `✨ 먹이 ${w.feeds} / ${GOAL} · ${GOAL - w.feeds}번 더 주면 소원이 이루어져요`;
     }
     $('myStars').hidden = myStars.length === 0;
     const ul = $('myStarList');
@@ -192,6 +193,37 @@ async function main() {
       li.textContent = `${w.text || '마음속 소원'} (${fmtDate(w.starAt)})`;
       ul.appendChild(li);
     });
+    syncAvatar();
+    renderMini();
+  }
+
+  // ---------- 내 물고기 (소원을 빌기 전에도 항상 연못에) ----------
+  const AVATAR = 'me-avatar';
+  function syncAvatar() {
+    if (myWish) {
+      if (world.getFish(AVATAR)) world.removeFish(AVATAR);
+      return;
+    }
+    const had = !!world.getFish(AVATAR);
+    world.upsertFish(
+      { id: AVATAR, name: state.name, species: pickedSpecies, dream: '', hasDream: true, done: 0, total: 0, sleeping: false },
+      { isMe: true, splashIn: !had && document.readyState === 'complete' },
+    );
+  }
+
+  // ---------- 휴대폰 아래 작은 막대 ----------
+  function renderMini() {
+    const bar = $('miniBar');
+    if (!bar) return;
+    const w = myWish;
+    $('miniText').textContent = w
+      ? w.hidden
+        ? '🙈 내 소원이 잠시 숨겨졌어요'
+        : `${w.text ? `“${w.text}”` : '마음속 소원'}`
+      : '연못을 누르면 내 물고기가 헤엄쳐요';
+    $('miniSub').textContent = w ? `✨ ${w.feeds} / ${GOAL}` : '';
+    $('miniFeed').hidden = !w || !!w.hidden;
+    $('miniOpen').textContent = w ? '자세히' : '🙏 소원 빌기';
   }
 
   // ---------- 소원 카드 ----------
@@ -207,16 +239,16 @@ async function main() {
     $('cardFill').style.width = `${Math.min(100, (w.feeds / GOAL) * 100)}%`;
     $('cardLabel').textContent = star
       ? `${w.feeds}명의 응원으로 ${fmtDate(w.starAt)}에 별이 되었어요`
-      : `🍚 먹이 ${w.feeds} / ${GOAL}`;
+      : `✨ 먹이 ${w.feeds} / ${GOAL}${w.feeders ? ` · ${w.feeders}명이 응원` : ''}`;
     const b = $('btnFeed');
     b.hidden = star;
-    b.disabled = w.mine || w.fedToday;
-    b.textContent = w.mine ? '내 소원이에요' : w.fedToday ? '오늘 먹이를 줬어요 ✓' : '🍚 먹이 주며 응원하기';
+    b.disabled = false;
+    b.textContent = w.mine ? `✨ 내 소원에 먹이 주기 (${w.feeds}/${GOAL})` : `✨ 먹이 주기 (${w.feeds}/${GOAL})`;
     const r = $('btnReport');
     r.hidden = !!w.mine || !w.text;
     r.disabled = !!w.reportedByMe;
     r.textContent = w.reportedByMe ? '신고함' : '🚩 신고';
-    b.title = w.fedToday ? '같은 소원에는 하루 한 번 — 내일 또 줄 수 있어요' : '';
+    b.title = `먹이가 ${GOAL}번 모이면 소원이 이루어져요`;
     // 물고기 이름표를 잠깐 켜서 어떤 물고기인지 보이게
     for (const f of world.fishes.values()) if (f.data.highlight && f.id !== w.id) f.setData({ highlight: false });
     world.getFish(w.id)?.setData({ highlight: true });
@@ -230,6 +262,12 @@ async function main() {
 
   world.onFishClick = (f) => {
     if (!f) return closeCard();
+    if (f.id === AVATAR) {
+      // 아직 소원이 없는 내 물고기 → 소원 빌기
+      openPanel(true);
+      if (!mobile()) $('wishInput').focus();
+      return;
+    }
     const w = wishes.get(f.id);
     if (!w) return;
     sfx.bubble();
@@ -242,24 +280,31 @@ async function main() {
   };
 
   // ---------- 먹이 주기 ----------
+  // 내가 준 먹이의 실시간 알림은 '누군가 줬어요'로 보이지 않게 (응답보다 알림이 먼저 올 수 있음)
+  const myPendingFeeds = new Map(); // id → [보낸 시각…]
   async function feedWish(id) {
+    myPendingFeeds.set(id, [...(myPendingFeeds.get(id) || []).filter((t) => Date.now() - t < 10000), Date.now()]);
     try {
       const { wish, becameStar } = await api(`/api/wishes/${id}/feed`, {});
       wishes.set(wish.id, wish);
       world.getFish(id)?.setData(fishData(wish));
       world.feed(null, id);
+      if (myWish?.id === id && !becameStar) {
+        myWish = { ...myWish, ...wish };
+        state.seen[id] = wish.feeds;
+        renderPanel();
+      }
       if (!state.fed.includes(id)) state.fed.push(id);
       save();
       sfx.chime();
       buzz([15, 40, 15]);
-      toast(becameStar ? '마지막 먹이! 이 소원이 용이 되어 올라가요 ✨' : `🍚 응원을 보냈어요 (${wish.feeds}/${GOAL})`, 'gold');
+      toast(becameStar ? '마지막 먹이! 소원이 이루어져요 ✨' : `✨ 먹이를 줬어요 (${wish.feeds}/${GOAL})`, 'gold');
       if (cardId === id) openCard(wish);
       if (becameStar) onStar(wish); // 실시간 연결이 없을 때를 위해 직접도 처리
       return wish;
     } catch (e) {
       const msg = {
-        fed_today: '이 소원에는 오늘 이미 먹이를 줬어요. 내일 또 와 주세요 🌙',
-        own_wish: '내 소원에는 먹이를 줄 수 없어요. 다른 소원을 응원해 보세요',
+        too_fast: '천천히, 한 번씩 주세요 🐟',
         already_star: '이미 별이 된 소원이에요 ✦',
         too_many: '잠시 쉬었다가 다시 해 주세요',
       }[e.code];
@@ -324,11 +369,11 @@ async function main() {
       world.refreshMarkers();
       if (cine) {
         celebrate({
-          title: w.mine ? '당신의 소원이 용이 되었어요' : '함께 올린 소원이 별이 되었어요',
+          title: w.mine ? '소원이 이루어졌어요' : '함께 빌어 준 소원이 이루어졌어요',
           dream: wishLine(w),
-          meta: `${w.feeds || GOAL}명의 응원이 모여 하늘의 별이 되었어요`,
+          meta: `먹이 ${GOAL}번이 모여 하늘의 별이 되었어요`,
         });
-      } else toast(`✦ ${w.name} 님의 소원이 별이 되었어요`, 'gold');
+      } else toast(`✦ ${w.name} 님의 소원이 이루어졌어요`, 'gold');
     };
     if (!f && cine) {
       // 연못에 없던 내 소원이면 잠깐 불러와서 올라가게
@@ -342,7 +387,7 @@ async function main() {
       closeCard();
       world.setView('pond');
       cinema(true);
-      caption(w.mine ? `${wishLine(w)} — ${GOAL}번의 응원을 받고 폭포를 오릅니다…` : `${w.name} 님의 소원이 폭포를 오릅니다…`, 5000);
+      caption(w.mine ? `${wishLine(w)} — 소원이 이루어지러 폭포를 오릅니다…` : `${w.name} 님의 소원이 폭포를 오릅니다…`, 3500);
       world.setPlaque(w.text || `${w.name}의 소원`, 1);
       world.startDirector(f, () => {
         cinema(false);
@@ -357,12 +402,12 @@ async function main() {
   const ritual = { step: 0, knocks: 0, text: '', isPublic: true, holdT: 0, holding: false, raf: 0 };
   function ritualStep(n) {
     ritual.step = n;
-    $('ritualStep').textContent = `${n} / 3`;
+    $('ritualStep').textContent = '';
     $('mokeo').hidden = n !== 1;
     $('mokeoDots').hidden = n !== 1;
     $('pray').hidden = n !== 2;
     if (n === 1) {
-      $('ritualTitle').textContent = '목어를 세 번 두드려 마음을 깨워요';
+      $('ritualTitle').textContent = '목어를 세 번 두드리면 물고기가 연못으로 가요';
       $('ritualHelp').textContent = '목어는 늘 눈을 뜨고 있는 물고기 — 깨어 있는 마음을 뜻해요';
     } else if (n === 2) {
       $('ritualTitle').textContent = '두 손을 모으고 소원을 떠올려요';
@@ -402,7 +447,7 @@ async function main() {
     m.classList.add('knock');
     document.querySelectorAll('#mokeoDots i')[ritual.knocks - 1]?.classList.add('on');
     world.addRipple(0, 2, 0.6 + ritual.knocks * 0.3);
-    if (ritual.knocks >= 3) setTimeout(() => ritualStep(2), 650);
+    if (ritual.knocks >= 3) setTimeout(() => releaseWish(), 450); // 세 번 두드리면 바로 놓아줌
   };
 
   // 길게 누르기 (합장)
@@ -464,13 +509,21 @@ async function main() {
       setTimeout(() => {
         closeRitual();
         $('wishInput').value = '';
+        // 내 물고기가 그대로 소원을 품고 헤엄치게 (자리 이어받기)
+        const av = world.getFish(AVATAR);
+        const at = av ? av.pos.clone() : null;
         renderPanel();
-        const f = putFish(wish, { splash: true });
+        const f = putFish(wish, { splash: !at });
+        if (f && at) {
+          f.pos.copy(at);
+          world.burst(at, 0xffd27a, 30, 0.8);
+          world.addRipple(at.x, at.z, 0.9);
+        }
         sfx.splash();
         caption(`${wishLine(wish)} — 연못으로 놓아주었어요`, 4500);
         if (f) setTimeout(() => f.surface(wishLine(wish)), 1500);
         setTimeout(() => toast('🔗 링크를 보내면 친구가 내 소원에 먹이를 줄 수 있어요'), 5000);
-      }, 900);
+      }, 500);
     } catch (e) {
       closeRitual();
       if (e.code === 'already_swimming') {
@@ -507,7 +560,7 @@ async function main() {
     }
     try {
       await navigator.clipboard.writeText(url);
-      toast('링크를 복사했어요. 친구에게 보내 먹이를 부탁해 보세요 🍚');
+      toast('링크를 복사했어요. 친구에게 보내 먹이를 부탁해 보세요 ✨');
     } catch (_) {
       prompt('이 링크를 복사해 보내 주세요', url);
     }
@@ -553,7 +606,7 @@ async function main() {
       const meta = document.createElement('p');
       meta.className = 'li-meta';
       meta.textContent =
-        w.status === 'star' ? `✦ ${w.name} · ${fmtDate(w.starAt)} 별이 됨` : `${w.name}${w.mine ? ' (나)' : ''} · 🍚 ${w.feeds}/${GOAL}`;
+        w.status === 'star' ? `✦ ${w.name} · ${fmtDate(w.starAt)} 이루어짐` : `${w.name}${w.mine ? ' (나)' : ''} · ✨ ${w.feeds}/${GOAL}`;
       body.append(t, meta);
       if (w.status !== 'star') {
         const bar = document.createElement('div');
@@ -566,18 +619,15 @@ async function main() {
       }
       const acts = document.createElement('div');
       acts.className = 'li-acts';
-      if (w.status === 'swimming' && !w.mine) {
+      if (w.status === 'swimming') {
         const fb = document.createElement('button');
         fb.className = 'small primary';
-        fb.disabled = w.fedToday;
-        fb.textContent = w.fedToday ? '✓' : '🍚';
-        fb.title = w.fedToday ? '오늘 먹이를 줬어요' : '먹이 주며 응원하기';
+        fb.textContent = '✨';
+        fb.title = '먹이 주기';
         fb.onclick = async () => {
           const nw = await feedWish(w.id);
           if (nw) {
-            fb.disabled = true;
-            fb.textContent = '✓';
-            meta.textContent = `${nw.name} · 🍚 ${nw.feeds}/${GOAL}`;
+            meta.textContent = `${nw.name}${nw.mine ? ' (나)' : ''} · ✨ ${nw.feeds}/${GOAL}`;
             body.querySelector('.falls-fill').style.width = `${Math.min(100, (nw.feeds / GOAL) * 100)}%`;
           }
         };
@@ -650,6 +700,10 @@ async function main() {
     document.body.classList.toggle('panel-open', open && mobile());
   }
   $('btnPanel').onclick = () => openPanel($('panel').classList.contains('collapsed'));
+  $('panelClose').onclick = () => openPanel(false);
+  $('miniOpen').onclick = () => openPanel(true);
+  $('miniFeed').onclick = () => myWish && feedWish(myWish.id);
+  $('btnFeedMine').onclick = () => myWish && feedWish(myWish.id);
 
   // ---------- 실시간 ----------
   const live = new Live();
@@ -670,7 +724,14 @@ async function main() {
   });
   live.on('wish:fed', ({ id, feeds }) => {
     const w = wishes.get(id);
-    if (!w || w.feeds >= feeds) return; // 내가 준 먹이는 이미 반영됨
+    const pend = (myPendingFeeds.get(id) || []).filter((t) => Date.now() - t < 10000);
+    if (pend.length) {
+      // 내가 준 먹이 → 숫자만 맞추고 조용히
+      pend.shift();
+      myPendingFeeds.set(id, pend);
+      return;
+    }
+    if (!w || w.feeds >= feeds) return;
     w.feeds = feeds;
     world.getFish(id)?.setData({ done: feeds });
     world.feed(null, id);
@@ -680,7 +741,7 @@ async function main() {
       save();
       renderPanel();
       sfx.chime();
-      toast(`🍚 누군가 내 소원에 먹이를 줬어요 (${feeds}/${GOAL})`, 'gold');
+      toast(`✨ 누군가 내 소원에 먹이를 줬어요 (${feeds}/${GOAL})`, 'gold');
     }
     if (cardId === id) openCard(w);
   });
@@ -731,7 +792,7 @@ async function main() {
     if (myWish) {
       const before = state.seen[myWish.id] ?? 0; // 처음 보는 브라우저면 받은 먹이 전부가 새 소식
       const diff = myWish.feeds - before;
-      if (diff > 0) setTimeout(() => (toast(`🍚 없는 동안 ${diff}명이 내 소원에 먹이를 줬어요`, 'gold'), sfx.chime()), 1200);
+      if (diff > 0) setTimeout(() => (toast(`✨ 없는 동안 내 소원에 먹이가 ${diff}번 들어왔어요`, 'gold'), sfx.chime()), 1200);
       state.seen[myWish.id] = myWish.feeds;
       save();
     }
@@ -770,7 +831,7 @@ async function main() {
   world.balanceNpcs();
   setTimeout(() => $('steerHint').classList.add('fade'), 25000); // 안내는 잠시 뒤 사라짐
   live.connect();
-  openPanel(!(mobile() && myWish)); // 휴대폰: 내 소원이 있으면 연못부터, 없으면 소원 적기부터
+  openPanel(!mobile()); // 휴대폰은 연못 화면부터 (아래 작은 막대에서 소원 빌기·먹이)
 
   // 개발 확인용
   window.__pond = { world, state, wishes, api, feedWish, get myWish() { return myWish; } };

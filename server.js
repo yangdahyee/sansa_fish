@@ -43,7 +43,7 @@ function announceOnline() {
 // ---------- 소원 저장 (파일) ----------
 let dirty = false;
 const pond = new Pond({
-  goal: Number(process.env.WISH_GOAL) || 21,
+  goal: Number(process.env.WISH_GOAL) || 5,
   persist: () => {
     dirty = true;
   },

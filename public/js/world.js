@@ -290,12 +290,12 @@ class Fish {
     const { name, done = 0, total = 0, sleeping } = this.data;
     this.tag.textContent = '';
     const n = document.createElement('span');
-    n.textContent = this.isMe ? `내 소원 · ${name}` : name;
+    n.textContent = this.isMe ? (this.data.dream ? `내 소원 · ${name}` : `나 · ${name}`) : name;
     this.tag.appendChild(n);
     if (total) {
       const p = document.createElement('span');
       p.style.opacity = '.8';
-      p.textContent = ` 🍚 ${done}/${total}`;
+      p.textContent = ` ✨ ${done}/${total}`;
       this.tag.appendChild(p);
     }
     if (sleeping) {
@@ -844,7 +844,7 @@ class Fish {
           a.t = 0;
           a.from = this.pos.clone();
         } else {
-          d.setLength(Math.min(3.2, d.length() * 3));
+          d.setLength(Math.min(5, d.length() * 3));
           this.vel.lerp(d, Math.min(1, dt * 3));
           this.pos.addScaledVector(this.vel, dt);
           this.face(this.vel, dt, 6);
@@ -853,7 +853,7 @@ class Fish {
       }
       if (a.phase === 'climb') {
         // 단마다 한 번씩 뛰어오름
-        a.t += dt / 0.55;
+        a.t += dt / 0.32;
         const to = tierPoint(a.tier + 1, xOff);
         const t = Math.min(1, a.t);
         const prev = this.pos.clone();
@@ -878,7 +878,7 @@ class Fish {
       }
       if (a.phase === 'transform') {
         // 등용문 앞: 빛기둥 아래에서 천천히 떠오르며 금빛으로 (카메라가 문을 크게 잡는 동안)
-        a.t += dt / 3.2;
+        a.t += dt / 1.8;
         const t = Math.min(1, a.t);
         this.model.traverse((o) => {
           if (o.isMesh && o.material.emissive) {
@@ -931,7 +931,7 @@ class Fish {
         }
         // 화면 앞을 지날 때는 천천히 (눈을 맞추듯)
         const slow = 1 - 0.65 * Math.exp(-(((a.u - a.nearU) / 0.06) ** 2));
-        a.u = Math.min(1, a.u + (dt / 7) * slow);
+        a.u = Math.min(1, a.u + (dt / 4.5) * slow);
         const prev = this.pos.clone();
         a.curve.getPoint(a.u, this.pos);
         this.face(tmpV.subVectors(this.pos, prev).divideScalar(Math.max(dt, 1e-4)), dt, 10);
@@ -1353,7 +1353,7 @@ export class World {
       gate.add(rod, tip);
     }
     // 가운데 태극 문양 대신 금빛 원
-    // 현판: 평소엔 '登龍門', 등용 의식 때는 그 사람의 꿈이 금빛으로 새겨짐
+    // 현판: 평소엔 '등용문', 소원이 이루어질 때는 그 소원이 금빛으로 새겨짐
     this.plaqueCanvas = document.createElement('canvas');
     this.plaqueCanvas.width = 1024;
     this.plaqueCanvas.height = 192;
@@ -1817,7 +1817,7 @@ export class World {
   }
 
   // ---------- 등용 의식 ----------
-  // 현판 글씨: text 가 없으면 '登龍門'
+  // 현판 글씨: text 가 없으면 '등용문'
   setPlaque(text, glow = 0) {
     const c = this.plaqueCanvas;
     const g = c.getContext('2d');
@@ -1832,7 +1832,7 @@ export class World {
     g.strokeStyle = '#c9a24a';
     g.lineWidth = 6;
     g.strokeRect(10, 10, W - 20, H - 20);
-    const t = text || '登 龍 門';
+    const t = text || '등 용 문';
     let size = text ? 92 : 120;
     const font = (sz) => `700 ${sz}px "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif`;
     g.font = font(size);
@@ -1983,7 +1983,7 @@ export class World {
       if (d.stage === 'sky') {
         wantPos = this.camera.position.clone();
         wantLook = d.skyLook;
-        if (d.t > 4.2) {
+        if (d.t > 2.4) {
           d.stage = 'return';
           d.t = 0;
         }
@@ -1992,7 +1992,7 @@ export class World {
         wantLook = d.saved.target;
         rp = 2.2;
         rl = 2.6;
-        if (d.t > 2.2) {
+        if (d.t > 1.6) {
           this.camera.position.copy(d.saved.pos);
           this.controls.target.copy(d.saved.target);
           this.applyPondLimits();

@@ -15,8 +15,8 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PondDO"] }],
   "vars": {
-    // 별이 되기까지 필요한 먹이 수 (사람이 늘면 108 로)
-    "WISH_GOAL": "21"
+    // 소원이 이루어지기까지 필요한 먹이 수 (내가 주든 남이 주든)
+    "WISH_GOAL": "5"
   },
   "observability": { "enabled": true }
 }
