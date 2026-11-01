@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makePadTexture, makePadGeometry, makeLotusFlower, makeLotusBud, makeRaisedLeaf, makeDroplets, makeStoneLantern, makeGrassTuftGeometry, makeCattail } from './decor.js';
-import { makeWaterMaterial, addCaustics, makeFallSheet, makeFallsMaterial, makeFoamMaterial, makeMossyRockMaterial } from './water.js';
+import { makeWaterMaterial, addCaustics, addWaterTint, makeFallSheet, makeFallsMaterial, makeFoamMaterial, makeMossyRockMaterial } from './water.js';
 import { SPECIES, SPECIES_IDS, MOVES } from './data.js';
 
 // ---------- 연못 치수 ----------
@@ -213,7 +213,13 @@ class Fish {
       if (o.isMesh) {
         o.frustumCulled = false; // 스킨 메시 경계 문제 방지
         o.material = o.material.clone();
-        o.material.transparent = false;
+        // 수면(renderOrder 2) 뒤에 그려야 반투명 물에 덮여 색이 빠지지 않음.
+        // 투명 목록에 넣되 불투명하게 (깊이는 그대로 써서 몸 부분끼리 겹침 문제 없음)
+        o.material.transparent = true;
+        o.material.opacity = 1;
+        o.material.depthWrite = true;
+        o.renderOrder = 2.5;
+        addWaterTint(o.material, this.world.waterUniforms.uUnder);
         if (this.isNpc) o.material.color?.multiplyScalar(0.75);
       }
     });

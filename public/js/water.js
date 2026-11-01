@@ -189,6 +189,30 @@ const CAUSTIC = `
     return pow(abs(c), 8.0);
   }`;
 
+// 물고기: 수면(반투명, 반사 섞임)에 덮이면 색이 뿌옇게 빠져서, 물고기는 수면 뒤에 그리고
+// 대신 물속 깊이만큼만 물빛을 살짝 입힌다 (물 위로 뛰어오르면 원래 색 그대로)
+export function addWaterTint(material, uUnder) {
+  material.onBeforeCompile = (sh) => {
+    sh.uniforms.uUnder = uUnder;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vTintY;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvTintY = (modelMatrix * vec4(transformed, 1.0)).y;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vTintY;\nuniform float uUnder;')
+      .replace(
+        '#include <opaque_fragment>',
+        `#include <opaque_fragment>
+        {
+          float d = -vTintY;
+          float k = smoothstep(0.0, 0.25, d) * (0.1 + smoothstep(0.3, 2.6, d) * 0.14) * (1.0 - uUnder);
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.02, 0.1, 0.12), k);
+        }`,
+      );
+  };
+  material.customProgramCacheKey = () => 'fish-water-tint';
+  return material;
+}
+
 export function addCaustics(material, uTime, strength = 0.5) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uTime;
