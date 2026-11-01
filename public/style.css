@@ -472,3 +472,53 @@ body.in-ritual #labels { opacity: 0; }
 }
 
 body.cinema .wish-bubble { opacity: 0 !important; }
+
+/* =====================================================================
+   아래 버튼 막대 — 유리(글라스모피즘)
+   ===================================================================== */
+.action-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: max(14px, env(safe-area-inset-bottom)); z-index: 12;
+  display: flex; gap: 6px; padding: 7px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,.05));
+  border: 1px solid rgba(255,255,255,.22);
+  box-shadow: 0 12px 40px rgba(0, 10, 30, .45), inset 0 1px 0 rgba(255,255,255,.35), inset 0 -1px 0 rgba(255,255,255,.05);
+  backdrop-filter: blur(18px) saturate(150%); -webkit-backdrop-filter: blur(18px) saturate(150%);
+  transition: opacity .5s, transform .3s;
+}
+.action-bar button {
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-width: 70px; padding: 8px 10px 7px; border-radius: 18px;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08); color: #f4f8ff;
+}
+.action-bar button:hover { background: rgba(255,255,255,.16); }
+.action-bar button:active { transform: scale(.94); background: rgba(255, 207, 107, .28); }
+.action-bar .ic { font-size: 20px; line-height: 1; filter: drop-shadow(0 2px 6px rgba(0,0,0,.35)); }
+.action-bar .lb { font-size: 11.5px; font-weight: 600; letter-spacing: -.01em; opacity: .92; }
+.action-bar .badge-n {
+  position: absolute; top: -6px; right: -4px; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 99px;
+  background: linear-gradient(135deg, #ffd27a, #ff9a6b); color: #3a1800; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+body.cinema .action-bar, body.in-ritual .action-bar { opacity: 0; pointer-events: none; }
+/* 안내 문구는 버튼 막대 위로 */
+.bottom-bars { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 74px); }
+.fish-card { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 84px); }
+.caption { bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px); }
+
+/* 지금 접속 중인 사람의 이름표 */
+.tag.online { background: rgba(10, 40, 30, .6); border-color: rgba(127, 227, 160, .45); }
+.tag .on-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #7fe3a0; margin-right: 5px; box-shadow: 0 0 8px #7fe3a0; vertical-align: 1px; }
+/* 응원 하트 */
+.float-text.emote { font-size: 26px; background: none; border: 0; box-shadow: none; padding: 0; }
+
+@media (max-width: 720px) {
+  .mini-bar, body:not(.panel-open) .mini-bar { display: none !important; } /* 버튼 막대가 대신함 */
+  .action-bar { width: calc(100% - 20px); justify-content: space-between; bottom: max(10px, env(safe-area-inset-bottom)); }
+  .action-bar button { flex: 1; min-width: 0; padding: 9px 4px 8px; }
+  body.panel-open .action-bar { opacity: 0; pointer-events: none; }
+  .fish-card { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 80px); }
+  .caption { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 90px); }
+}
+@media (min-width: 721px) {
+  .steer-hint { font-size: 11.5px; }
+}

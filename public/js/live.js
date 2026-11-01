@@ -15,7 +15,10 @@ export class Live extends EventTarget {
       return;
     }
     this.ws = ws;
-    ws.onopen = () => (this.retry = 0);
+    ws.onopen = () => {
+      this.retry = 0;
+      this.dispatchEvent(new CustomEvent('open'));
+    };
     ws.onmessage = (e) => {
       let m;
       try {
@@ -30,6 +33,10 @@ export class Live extends EventTarget {
       setTimeout(() => this.connect(), wait);
     };
     ws.onerror = () => {};
+  }
+
+  send(msg) {
+    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
   }
 
   on(type, fn) {

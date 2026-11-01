@@ -3,6 +3,7 @@
 // 연못 하나를 맡은 Durable Object(PondDO)로 간다. 규칙은 core/pond.js (Node 서버와 같은 코드).
 import { DurableObject } from 'cloudflare:workers';
 import { Pond } from '../core/pond.js';
+import { newPid, cleanProfile, cleanEmote, EMOTE_GAP_MS } from '../core/presence.js';
 
 export default {
   async fetch(request, env) {
@@ -42,6 +43,10 @@ export class PondDO extends DurableObject {
       const pair = new WebSocketPair();
       // 잠들기(Hibernation) 방식: 연결만 열어 두고 조용할 땐 요금이 거의 들지 않음
       this.ctx.acceptWebSocket(pair[1]);
+      // 잠들었다 깨어나도 누가 누군지 남도록 연결마다 정보를 붙여 둠
+      const pid = newPid();
+      pair[1].serializeAttachment({ pid, profile: null });
+      pair[1].send(JSON.stringify({ t: 'welcome', pid }));
       pair[1].send(JSON.stringify({ t: 'online', n: this.ctx.getWebSockets().length }));
       this.announceOnline();
       return new Response(null, { status: 101, webSocket: pair[0] });
@@ -58,13 +63,50 @@ export class PondDO extends DurableObject {
     }
   }
 
+  // 지금 연못에 있는 사람들 (자기소개를 보낸 열린 연결만)
   announceOnline() {
     clearTimeout(this.onlineTimer);
-    this.onlineTimer = setTimeout(() => this.broadcast({ t: 'online', n: this.ctx.getWebSockets().length }), 400);
+    this.onlineTimer = setTimeout(() => {
+      const open = this.ctx.getWebSockets().filter((ws) => ws.readyState === 1);
+      const users = [];
+      for (const ws of open) {
+        const a = ws.deserializeAttachment();
+        if (a?.profile) users.push({ pid: a.pid, ...a.profile });
+      }
+      this.broadcast({ t: 'presence', users, n: open.length });
+    }, 250);
   }
 
-  async webSocketMessage() {
-    // 클라이언트 → 서버 메시지는 쓰지 않음 (모든 행동은 /api)
+  // 자기소개(hello)와 몸짓(emote: 응원·헤엄·이동)
+  async webSocketMessage(ws, data) {
+    let m;
+    try {
+      m = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data));
+    } catch (_) {
+      return;
+    }
+    const a = ws.deserializeAttachment() || { pid: newPid(), profile: null };
+    if (m?.t === 'hello') {
+      a.profile = cleanProfile(m.profile);
+      ws.serializeAttachment(a);
+      this.announceOnline();
+    } else if (m?.t === 'emote' && a.profile) {
+      const e = cleanEmote(m);
+      if (!e) return;
+      this.lastEmote ||= new Map();
+      const key = `${a.pid}:${e.kind}`;
+      const now = Date.now();
+      if (now - (this.lastEmote.get(key) || 0) < EMOTE_GAP_MS[e.kind]) return;
+      this.lastEmote.set(key, now);
+      if (this.lastEmote.size > 5000) this.lastEmote.clear();
+      const s = JSON.stringify({ t: 'emote', pid: a.pid, ...e });
+      for (const o of this.ctx.getWebSockets()) {
+        if (o === ws) continue;
+        try {
+          o.send(s);
+        } catch (_) {}
+      }
+    }
   }
 
   async webSocketClose(ws, code) {

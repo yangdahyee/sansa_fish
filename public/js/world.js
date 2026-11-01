@@ -297,6 +297,12 @@ class Fish {
     if (!this.tag) return;
     const { name, done = 0, total = 0, sleeping } = this.data;
     this.tag.textContent = '';
+    if (this.data.online && !this.isMe) {
+      const dot = document.createElement('span');
+      dot.className = 'on-dot'; // 지금 접속 중
+      this.tag.appendChild(dot);
+    }
+    this.tag.classList.toggle('online', !!this.data.online && !this.isMe);
     const n = document.createElement('span');
     n.textContent = this.isMe ? (this.data.dream ? `내 소원 · ${name}` : `나 · ${name}`) : name;
     this.tag.appendChild(n);
@@ -427,7 +433,8 @@ class Fish {
       const sx = (tmpV2.x * 0.5 + 0.5) * w.width;
       const sy = (-tmpV2.y * 0.5 + 0.5) * w.height;
       if (this.tag) {
-        this.tag.style.display = visible && show && w.showTags && !w.skyView && (this.isMe || this.data.highlight) ? '' : 'none';
+        // 이름표: 나, 지금 접속한 사람, 카드를 연 물고기
+        this.tag.style.display = visible && show && w.showTags && !w.skyView && (this.isMe || this.data.online || this.data.highlight) ? '' : 'none';
         this.tag.style.left = `${sx}px`;
         this.tag.style.top = `${sy}px`;
       }

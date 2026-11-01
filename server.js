@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Pond } from './core/pond.js';
+import { newPid, cleanProfile, cleanEmote, EMOTE_GAP_MS } from './core/presence.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
@@ -34,10 +35,14 @@ function broadcast(msg) {
   const s = JSON.stringify(msg);
   for (const ws of sockets) if (ws.readyState === 1) ws.send(s);
 }
+// 지금 연못에 있는 사람들 (자기소개를 보낸 연결만)
 let onlineTimer = null;
 function announceOnline() {
   clearTimeout(onlineTimer);
-  onlineTimer = setTimeout(() => broadcast({ t: 'online', n: sockets.size }), 400);
+  onlineTimer = setTimeout(() => {
+    const users = [...sockets].filter((ws) => ws.profile).map((ws) => ({ pid: ws.pid, ...ws.profile }));
+    broadcast({ t: 'presence', users, n: sockets.size });
+  }, 250);
 }
 
 // ---------- 소원 저장 (파일) ----------
@@ -149,9 +154,33 @@ const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 });
 wss.on('connection', (ws) => {
   sockets.add(ws);
   ws.isAlive = true;
+  ws.pid = newPid();
+  ws.profile = null;
+  ws.lastEmote = {};
   ws.on('pong', () => (ws.isAlive = true));
+  ws.send(JSON.stringify({ t: 'welcome', pid: ws.pid }));
   ws.send(JSON.stringify({ t: 'online', n: sockets.size }));
   announceOnline();
+  ws.on('message', (data) => {
+    let m;
+    try {
+      m = JSON.parse(data);
+    } catch (_) {
+      return;
+    }
+    if (m?.t === 'hello') {
+      ws.profile = cleanProfile(m.profile);
+      announceOnline();
+    } else if (m?.t === 'emote' && ws.profile) {
+      const e = cleanEmote(m);
+      if (!e) return;
+      const now = Date.now();
+      if (now - (ws.lastEmote[e.kind] || 0) < EMOTE_GAP_MS[e.kind]) return;
+      ws.lastEmote[e.kind] = now;
+      const s = JSON.stringify({ t: 'emote', pid: ws.pid, ...e });
+      for (const o of sockets) if (o !== ws && o.readyState === 1) o.send(s);
+    }
+  });
   ws.on('close', () => {
     sockets.delete(ws);
     announceOnline();

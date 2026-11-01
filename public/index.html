@@ -117,13 +117,20 @@
       <button id="btnFeed" class="primary small">✨ 먹이 주기</button>
       <button id="btnReport" class="small report" title="욕설·광고·개인정보 등">🚩 신고</button>
       <button id="btnDelete" class="small report" hidden title="내 소원 지우기">🗑 지우기</button>
+      <button id="btnCheerTo" class="small" hidden>💛 응원 보내기</button>
     </div>
   </div>
 
-  <!-- 처음 온 사람을 위한 안내 -->
+  <!-- 아래 버튼 막대 (유리 느낌) + 안내 -->
   <div class="bottom-bars">
     <p id="steerHint" class="steer-hint">물고기를 누르면 소원이 보여요 · 연못을 누르면 내 물고기가 그곳으로 헤엄쳐요</p>
   </div>
+  <nav class="action-bar" id="actionBar" aria-label="내 물고기">
+    <button id="actSwim"><span class="ic">🌊</span><span class="lb">헤엄</span></button>
+    <button id="actWish"><span class="ic">🙏</span><span class="lb">소원</span></button>
+    <button id="actFeed"><span class="ic">✨</span><span class="lb">먹이주기</span><span class="badge-n" id="feedBadge" hidden></span></button>
+    <button id="actCheer"><span class="ic">💛</span><span class="lb">응원</span></button>
+  </nav>
 
   <!-- 방생 의식 -->
   <div id="ritual" class="ritual" hidden>

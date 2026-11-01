@@ -112,6 +112,7 @@ async function main() {
   });
   $('loading').classList.add('done');
 
+  const live = new Live(); // 실시간: 새 소원·먹이·별, 지금 있는 사람·몸짓
   const wishes = new Map(); // 연못에 있는(또는 본) 소원들
   let myWish = null; // 지금 헤엄치는 내 소원
   let myStars = [];
@@ -143,6 +144,7 @@ async function main() {
     if (w.status !== 'swimming') return null;
     const f = world.upsertFish(fishData(w, opts.highlight ? { highlight: true } : {}), { isMe: !!w.mine, splashIn: !!opts.splash });
     world.refreshMarkers();
+    if (typeof syncPresence === 'function' && online.size) syncPresence();
     return f;
   }
 
@@ -207,6 +209,94 @@ async function main() {
     });
     syncAvatar();
     renderMini();
+    sendHello();
+  }
+
+  // ---------- 지금 연못에 있는 사람들 ----------
+  let myPid = null;
+  let presenceReady = false;
+  const online = new Map(); // pid → { name, species, wishId }
+  let lastHello = '';
+  function sendHello(force = false) {
+    const profile = { name: state.name, species: myWish?.species || pickedSpecies, wishId: myWish?.id || null };
+    const key = JSON.stringify(profile);
+    if (!force && key === lastHello) return;
+    lastHello = key;
+    live.send({ t: 'hello', profile });
+  }
+  const myFish = () => world.getFish(myWish?.id) || world.getFish(AVATAR);
+  // 접속한 사람의 물고기: 소원이 연못에 있으면 그 물고기, 없으면 그 사람만의 물고기(p:아이디)
+  const fishOfUser = (pid) => {
+    const u = online.get(pid);
+    if (!u) return null;
+    return (u.wishId && world.getFish(u.wishId)) || world.getFish(`p:${pid}`);
+  };
+  function syncPresence() {
+    const onlineWish = new Set();
+    for (const [pid, u] of online) {
+      const wf = u.wishId && world.getFish(u.wishId);
+      if (wf) {
+        onlineWish.add(u.wishId);
+        wf.setData({ online: true, name: u.name });
+        if (world.getFish(`p:${pid}`)) world.removeFish(`p:${pid}`);
+      } else {
+        const id = `p:${pid}`;
+        const had = world.getFish(id);
+        world.upsertFish(
+          { id, name: u.name, species: u.species, dream: '', hasDream: true, done: 0, total: 0, sleeping: false, online: true },
+          { splashIn: !had },
+        );
+      }
+    }
+    for (const f of [...world.fishes.values()]) {
+      if (f.id.startsWith('p:') && !online.has(f.id.slice(2))) world.removeFish(f.id);
+      else if (f.data.online && !f.id.startsWith('p:') && !onlineWish.has(f.id)) f.setData({ online: false });
+    }
+  }
+  live.on('open', () => sendHello(true));
+  live.on('welcome', ({ pid }) => {
+    myPid = pid;
+    sendHello(true);
+  });
+  live.on('presence', ({ users, n }) => {
+    const before = new Set(online.keys());
+    online.clear();
+    for (const u of users) if (u.pid !== myPid) online.set(u.pid, u);
+    stats.online = n;
+    renderStats();
+    syncPresence();
+    // 새로 들어온 사람 알림 (처음 받는 목록은 조용히)
+    if (presenceReady) for (const [pid, u] of online) if (!before.has(pid)) toast(`🐟 ${u.name} 님이 연못에 들어왔어요`);
+    presenceReady = true;
+  });
+
+  // 다른 사람의 몸짓
+  live.on('emote', (m) => {
+    const f = fishOfUser(m.pid);
+    const who = online.get(m.pid);
+    if (m.kind === 'cheer') {
+      if (f) cheerMotion(f, m.jump);
+      const target = m.to === myPid ? myFish() : fishOfUser(m.to);
+      if (target) {
+        target.wiggle = Math.max(target.wiggle, 1);
+        world.burst(target.pos, 0xffd27a, 16, 0.6);
+      }
+      if (m.to === myPid) {
+        sfx.chime();
+        buzz([20, 50, 20]);
+        toast(`💛 ${who?.name || '누군가'} 님이 응원을 보냈어요`, 'gold');
+      }
+    } else if (m.kind === 'swim') f?.doMove(m.move);
+    else if (m.kind === 'goto') world.swimFishTo(f?.id, m.p);
+  });
+
+  // 응원 몸짓: 빙그르르 돌거나 물 위로 점프 + 반짝이
+  function cheerMotion(f, jump) {
+    if (!f || f.action) return;
+    if (jump) f.leap();
+    else f.doMove('roll');
+    world.burst(f.pos, 0xffc6d9, 22, 0.8);
+    world.floatText('💛', f.pos, 'emote', 1.8);
   }
 
   // ---------- 내 물고기 (소원을 빌기 전에도 항상 연못에) ----------
@@ -236,13 +326,19 @@ async function main() {
     $('miniSub').textContent = w ? `✨ ${w.feeds} / ${GOAL}` : '';
     $('miniFeed').hidden = !w || !!w.hidden;
     $('miniOpen').textContent = w ? '자세히' : '🙏 소원 빌기';
+    const badge = $('feedBadge');
+    badge.hidden = !w;
+    if (w) badge.textContent = `${w.feeds}/${GOAL}`;
   }
 
   // ---------- 소원 카드 ----------
   let cardId = null;
+  let cheerTarget = null; // 응원을 받을 사람 (접속한 사람의 물고기 카드를 열었을 때)
   function openCard(w) {
     if (!w) return;
     if (mobile()) openPanel(false); // 휴대폰: 카드와 패널이 겹치지 않게 하나만
+    $('cardFalls').hidden = false;
+    $('btnCheerTo').hidden = !!w.mine || w.status === 'star' || ![...online.values()].some((u) => u.wishId === w.id);
     cardId = w.id;
     const star = w.status === 'star';
     $('wishCard').hidden = false;
@@ -267,7 +363,27 @@ async function main() {
     for (const f of world.fishes.values()) if (f.data.highlight && f.id !== w.id) f.setData({ highlight: false });
     world.getFish(w.id)?.setData({ highlight: true });
   }
+  // 아직 소원이 없는, 지금 접속한 사람의 물고기 카드
+  function openPresenceCard(u, f) {
+    closeCard();
+    if (mobile()) openPanel(false);
+    cardId = null;
+    $('wishCard').hidden = false;
+    $('wishCard').classList.remove('is-star');
+    $('cardName').textContent = `● 지금 연못에 있어요 · ${u.name}`;
+    $('cardText').textContent = '아직 소원을 빌지 않은 물고기예요';
+    $('cardFalls').hidden = true;
+    $('btnFeed').hidden = true;
+    $('btnReport').hidden = true;
+    $('btnDelete').hidden = true;
+    $('btnCheerTo').hidden = false;
+    f.setData({ highlight: true });
+    sfx.bubble();
+  }
+
   function closeCard() {
+    if (cheerTarget) world.getFish(`p:${cheerTarget}`)?.setData({ highlight: false });
+    cheerTarget = null;
     if (cardId) world.getFish(cardId)?.setData({ highlight: false });
     cardId = null;
     $('wishCard').hidden = true;
@@ -276,6 +392,13 @@ async function main() {
 
   world.onFishClick = (f) => {
     if (!f) return closeCard();
+    if (f.id.startsWith('p:')) {
+      const u = online.get(f.id.slice(2));
+      if (!u) return;
+      openPresenceCard(u, f);
+      cheerTarget = f.id.slice(2);
+      return;
+    }
     if (f.id === AVATAR) {
       // 아직 소원이 없는 내 물고기 → 소원 빌기
       openPanel(true);
@@ -286,6 +409,14 @@ async function main() {
     if (!w) return;
     sfx.bubble();
     openCard(w);
+  };
+  let lastGoto = 0;
+  world.onSwimTo = (p) => {
+    sfx.bubble();
+    const now = performance.now();
+    if (now - lastGoto < 220) return;
+    lastGoto = now;
+    live.send({ t: 'emote', kind: 'goto', p: [p.x, p.y, p.z].map((v) => Math.round(v * 100) / 100) });
   };
   world.onStarClick = (star) => {
     sfx.chime();
@@ -328,6 +459,7 @@ async function main() {
   $('btnFeed').onclick = () => cardId && feedWish(cardId);
 
   $('btnDelete').onclick = () => cardId && deleteWish(cardId);
+  $('btnCheerTo').onclick = () => $('actCheer').click();
   $('btnDeleteMine').onclick = () => myWish && deleteWish(myWish.id);
 
   // ---------- 하늘 보기 ----------
@@ -338,6 +470,50 @@ async function main() {
     if (on) caption('별을 누르면 이루어진 소원이 보여요', 3500);
   };
 
+  // ---------- 아래 버튼 막대: 헤엄 · 소원 · 먹이주기 · 응원 ----------
+  const SWIMS = ['dash', 'circle', 'roll', 'wag', 'nibble', 'glide', 'forage'];
+  $('actSwim').onclick = () => {
+    const f = myFish();
+    if (!f || f.action) return;
+    const move = SWIMS[Math.floor(Math.random() * SWIMS.length)];
+    f.manual = null;
+    f.doMove(move);
+    live.send({ t: 'emote', kind: 'swim', move });
+    sfx.bubble();
+    buzz(10);
+  };
+  $('actWish').onclick = () => {
+    openPanel(true);
+    if (!myWish && !mobile()) $('wishInput').focus();
+  };
+  $('actFeed').onclick = () => {
+    if (!myWish) {
+      toast('먼저 소원을 빌어 주세요 🙏');
+      openPanel(true);
+      return;
+    }
+    feedWish(myWish.id);
+  };
+  $('actCheer').onclick = () => {
+    const f = myFish();
+    if (!f) return;
+    // 카드를 열어 둔 물고기가 지금 접속한 사람이면 그 사람에게 응원
+    let to = null;
+    if (cardId) {
+      for (const [pid, u] of online) if (u.wishId === cardId) to = pid;
+    }
+    if (cheerTarget && online.has(cheerTarget)) to = cheerTarget;
+    const jump = Math.random() < 0.5;
+    cheerMotion(f, jump);
+    live.send({ t: 'emote', kind: 'cheer', to, jump });
+    sfx.chime();
+    buzz(15);
+    if (to) {
+      const tf = fishOfUser(to);
+      if (tf) tf.wiggle = Math.max(tf.wiggle, 1);
+      toast(`💛 ${online.get(to)?.name} 님에게 응원을 보냈어요`);
+    } else if (online.size === 0) toast('💛 응원! 다른 사람이 들어오면 함께 보여요');
+  };
   // ---------- 신고 ----------
   $('btnReport').onclick = async () => {
     const id = cardId;
@@ -777,7 +953,6 @@ async function main() {
   $('btnFeedMine').onclick = () => myWish && feedWish(myWish.id);
 
   // ---------- 실시간 ----------
-  const live = new Live();
   live.on('online', (m) => {
     stats.online = m.n;
     renderStats();
