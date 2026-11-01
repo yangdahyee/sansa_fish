@@ -228,6 +228,7 @@ class Fish {
     this.model = model;
     this.pivot.add(model);
     this.mixer = new THREE.AnimationMixer(model);
+    this.applyGlow?.();
     if (src.clip) {
       const a = this.mixer.clipAction(src.clip);
       a.time = Math.random() * src.clip.duration;
@@ -241,6 +242,16 @@ class Fish {
     this.data = { ...this.data, ...d };
     if (d.species && d.species !== prevSpecies) this.buildModel(d.species);
     this.updateTag();
+    this.applyGlow();
+  }
+
+  // 먹이(응원)를 받을수록 금빛으로 은은하게 빛남
+  applyGlow() {
+    if (!this.model || this.action?.type === 'ascend') return;
+    const g = this.isNpc ? 0 : Math.min(1, this.progress) * 0.32;
+    this.model.traverse((o) => {
+      if (o.isMesh && o.material.emissive) o.material.emissive.setRGB(1, 0.72, 0.3).multiplyScalar(g);
+    });
   }
 
   get progress() {
@@ -279,12 +290,12 @@ class Fish {
     const { name, done = 0, total = 0, sleeping } = this.data;
     this.tag.textContent = '';
     const n = document.createElement('span');
-    n.textContent = this.isMe ? `나 · ${name}` : name;
+    n.textContent = this.isMe ? `내 소원 · ${name}` : name;
     this.tag.appendChild(n);
     if (total) {
       const p = document.createElement('span');
-      p.style.opacity = '.75';
-      p.textContent = ` ${done}/${total}`;
+      p.style.opacity = '.8';
+      p.textContent = ` 🍚 ${done}/${total}`;
       this.tag.appendChild(p);
     }
     if (sleeping) {
@@ -310,6 +321,15 @@ class Fish {
   }
 
   // ---------- 행동 ----------
+  // 수면으로 올라가 소원을 띄우기
+  surface(text) {
+    if (this.action) return false;
+    this.doMove('nibble');
+    if (this.move) this.move.dur = 5.5;
+    this.surfaceText = text;
+    return true;
+  }
+
   // 정한 자리로 헤엄쳐 가기 (너무 오래 걸리면 포기)
   swimTo(p) {
     if (this.action) return false;
@@ -399,7 +419,7 @@ class Fish {
       const sx = (tmpV2.x * 0.5 + 0.5) * w.width;
       const sy = (-tmpV2.y * 0.5 + 0.5) * w.height;
       if (this.tag) {
-        this.tag.style.display = visible && show && w.showTags ? '' : 'none';
+        this.tag.style.display = visible && show && w.showTags && (this.isMe || this.data.highlight) ? '' : 'none';
         this.tag.style.left = `${sx}px`;
         this.tag.style.top = `${sy}px`;
       }
@@ -523,6 +543,12 @@ class Fish {
             );
             w.sfx?.bubble();
           }
+        }
+        // 수면에 닿으면 소원 한 줄을 물방울처럼 띄움
+        if (this.surfaceText && this.pos.y > surfaceY - 0.12) {
+          w.floatText(this.surfaceText, this.pos, 'wish-bubble', 6);
+          w.addRipple(this.pos.x, this.pos.z, 0.6);
+          this.surfaceText = null;
         }
         this.yTop = -0.15;
         this.animRate = 0.6;
@@ -1983,12 +2009,14 @@ export class World {
 
   // ---------- 별자리 ----------
   starPosition(star) {
-    const h1 = hashStr(`${star.name}|${star.at}`);
-    const h2 = hashStr(`${star.at}|${star.dream}`);
+    const key = star.id || `${star.name}|${star.at}`;
+    const h1 = hashStr(`${key}|a`);
+    const h2 = hashStr(`${key}|b`);
     return new THREE.Vector3((h1 - 0.5) * 90, 22 + h2 * 38, -70 - h1 * 20);
   }
 
   addStar(star, { flash = false } = {}) {
+    if (star.id && this.hasStar(star.id)) return;
     const color = SPECIES[star.species]?.color || '#ffd27a';
     const s = new THREE.Sprite(
       new THREE.SpriteMaterial({
@@ -2009,6 +2037,10 @@ export class World {
     );
     core.scale.setScalar(0.35);
     s.add(core);
+  }
+
+  hasStar(id) {
+    return this.dreamStars.children.some((s) => s.userData.star?.id === id);
   }
 
   setStars(list) {
@@ -2090,7 +2122,7 @@ export class World {
   refreshMarkers() {
     this.markers.clear();
     for (const f of this.fishes.values()) {
-      if (f.isNpc || !f.data.total || f.action) continue;
+      if (f.isNpc || !f.isMe || !f.data.total || f.action) continue; // 폭포 등불은 내 소원만
       const tier = Math.min(TIERS, Math.round(f.progress * TIERS));
       const xOff = (hashStr(f.id) - 0.5) * (6 - tier * 0.45);
       const p = tierPoint(tier, xOff);
@@ -2411,6 +2443,15 @@ export class World {
       if (f && !f.isNpc && !f.isMe) return this.onFishClick?.(f);
       // 연못 전체 시점에서 내 물고기 → 내 꿈 패널
       if (f?.isMe && this.view.mode === 'pond') return this.onFishClick?.(f);
+
+      // 하늘의 별 → 별이 된 소원 보기
+      if (!f && this.onStarClick) {
+        const sh = ray.intersectObjects(this.dreamStars.children, false);
+        if (sh[0]) {
+          this.ringPulse(sh[0].object.position, 0xffffff, 6);
+          return this.onStarClick(sh[0].object.userData.star);
+        }
+      }
 
       // 빈 물(또는 연못 친구 물고기)을 눌렀을 때: 내 물고기가 있으면 그 자리로 헤엄쳐 감
       const focus = this.view.fishId && this.fishes.get(this.view.fishId);

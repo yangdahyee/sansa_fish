@@ -1,41 +1,37 @@
-// 나의 꿈/할 일은 이 브라우저(localStorage)에 저장된다.
-import { randomName, SLEEP_AFTER_MS } from './data.js';
+// 이 브라우저에만 남는 정보: 익명 아이디, 이름, 내가 본 먹이 수, 축하를 본 별, 소리 설정
+import { randomName } from './data.js';
 
-const KEY = 'deungyongmun:v1';
+const KEY = 'wish-pond:v1';
+
+function newUid() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
 
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY));
-    if (s && typeof s === 'object') return s;
+    if (s && typeof s === 'object' && s.uid) return s;
   } catch (_) {}
   return null;
 }
 
 export const state = load() || {
+  uid: newUid(), // 서버에는 해시로만 저장됨 — 내 소원 확인·하루 한 번 먹이에 쓰임
   name: randomName(),
-  dream: null, // { text, species, isPublic, todos:[{text, done, doneAt}], createdAt, lastActive }
-  stars: [], // 내가 등용시킨 꿈들 [{ text, species, at }]
   sound: false,
+  seen: {}, // { [wishId]: 마지막으로 본 먹이 수 } → "n명이 먹이를 줬어요"
+  celebrated: [], // 축하 장면을 이미 본 내 별
+  fed: [], // 내가 먹이를 준 소원 (그 소원이 별이 되면 함께 기뻐하기)
 };
+state.seen ||= {};
+state.celebrated ||= [];
+state.fed ||= [];
 
 export function save() {
   try {
+    if (state.fed.length > 300) state.fed = state.fed.slice(-300);
     localStorage.setItem(KEY, JSON.stringify(state));
   } catch (_) {}
-}
-
-export function progress() {
-  const d = state.dream;
-  if (!d) return { done: 0, total: 0 };
-  return { done: d.todos.filter((t) => t.done).length, total: d.todos.length };
-}
-
-export function isSleeping() {
-  const d = state.dream;
-  if (!d) return false;
-  return Date.now() - (d.lastActive || d.createdAt) > SLEEP_AFTER_MS;
-}
-
-export function touch() {
-  if (state.dream) state.dream.lastActive = Date.now();
 }

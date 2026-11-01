@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>등용문 연못 — 미뤄둔 꿈을 물고기로</title>
-  <meta name="description" content="오래 미뤄둔 꿈을 물고기 한 마리로 띄우고, 할 일을 하나씩 해낼 때마다 폭포를 거슬러 오르세요. 다 오르면 용이 되어 연못 하늘의 별이 됩니다." />
+  <title>소원 연못 — 소원을 물고기에 담아 놓아주세요</title>
+  <meta name="description" content="소원을 물고기에 담아 연못에 놓아주세요. 사람들이 먹이를 주며 응원하고, 먹이 21번이 모이면 용이 되어 하늘의 별이 됩니다." />
   <meta name="theme-color" content="#0b1a2e" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" />
@@ -31,124 +31,135 @@
   <!-- 상단 바 -->
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark">龍</span>
+      <span class="brand-mark">願</span>
       <div>
-        <h1>등용문 연못</h1>
-        <p class="sub"><span id="pondName">연못</span> · <span id="online">혼자</span></p>
+        <h1>소원 연못</h1>
+        <p class="sub" id="stats">연못을 여는 중…</p>
       </div>
     </div>
     <div class="top-actions">
-      <div class="views" role="group" aria-label="시점">
-        <button data-view="pond" class="on" title="연못 전체 보기 (Esc)">🗺️<span> 연못</span></button>
-        <button data-view="chase" title="내 물고기 따라가기">🎥<span> 따라가기</span></button>
-        <button data-view="eye" title="물고기 눈으로 보기">👁️<span> 물고기 눈</span></button>
-      </div>
-      <button id="btnShare" class="ghost" title="이 연못 링크 복사">🔗 같이 헤엄치기</button>
+      <button id="btnList" class="ghost" title="소원 모아 보기">📜<span> 소원 모아 보기</span></button>
       <button id="btnSound" class="ghost icon" title="소리 켜기/끄기">🔇</button>
-      <button id="btnPanel" class="ghost icon mobile-only" title="나의 꿈">📜</button>
+      <button id="btnPanel" class="ghost icon mobile-only" title="내 소원">🐟</button>
     </div>
   </header>
 
-  <!-- 나의 꿈 패널 -->
+  <!-- 내 소원 패널 -->
   <aside id="panel" class="panel">
-    <!-- 꿈이 없을 때: 방류 -->
+    <!-- 소원이 없을 때 -->
     <section id="releaseView" hidden>
-      <h2>미뤄둔 꿈 하나를 띄워 보세요</h2>
-      <p class="hint">꿈은 물고기가 되고, 할 일은 폭포의 물길이 됩니다.<br />할 일을 해낼 때마다 물고기가 한 칸씩 거슬러 오릅니다.</p>
+      <h2>소원 하나를 물고기에 담아 보세요</h2>
+      <p class="hint">놓아준 물고기는 연못을 헤엄쳐요. 지나가던 사람들이 <b>먹이</b>를 주며 응원하고, 먹이가 <b id="goalText">21</b>번 모이면 용이 되어 하늘의 별이 됩니다.</p>
 
       <label class="field">
-        <span>나의 꿈</span>
-        <input id="dreamInput" maxlength="80" placeholder="예) 제주에서 작은 책방 열기" />
+        <span>나의 소원</span>
+        <input id="wishInput" maxlength="60" placeholder="예) 엄마가 오래오래 건강하시길" />
       </label>
 
       <div class="field">
-        <span>함께할 물고기</span>
+        <span>소원을 담을 물고기</span>
         <div id="speciesPicker" class="species"></div>
-      </div>
-
-      <div class="field">
-        <span>물길 나누기 (할 일 1~10개)</span>
-        <ol id="todoDraft" class="todo-draft"></ol>
-        <div class="row">
-          <input id="todoDraftInput" maxlength="60" placeholder="예) 동네 책방 세 곳 가 보기" />
-          <button id="btnAddDraft" class="small">추가</button>
-        </div>
       </div>
 
       <label class="check">
         <input type="checkbox" id="publicInput" checked />
-        <span>연못 친구들에게 꿈 문장 보여주기</span>
+        <span>다른 사람에게 소원 보여주기 (끄면 ‘마음속 소원’으로 보여요)</span>
       </label>
 
-      <button id="btnRelease" class="primary">🌊 꿈 방류하기</button>
+      <button id="btnRelease" class="primary">🙏 방생하러 가기</button>
     </section>
 
-    <!-- 꿈이 있을 때: 물길 -->
-    <section id="dreamView" hidden>
+    <!-- 내 소원이 헤엄치는 중 -->
+    <section id="myView" hidden>
       <div class="dream-head">
-        <span id="myFishName" class="fish-name"></span>
-        <span id="myVisibility" class="badge"></span>
+        <span id="myName" class="fish-name"></span>
+        <span id="myBadge" class="badge"></span>
       </div>
-      <h2 id="myDream" class="dream-text"></h2>
-
+      <h2 id="myText" class="dream-text"></h2>
       <div class="falls">
-        <div class="falls-bar"><div id="fallsFill" class="falls-fill"></div></div>
-        <p id="fallsLabel" class="falls-label"></p>
+        <div class="falls-bar"><div id="myFill" class="falls-fill"></div></div>
+        <p id="myLabel" class="falls-label"></p>
       </div>
-
-      <p class="hint tip">💡 연못을 누르면 내 물고기가 그곳으로 헤엄쳐요</p>
-      <ul id="todoList" class="todo-list"></ul>
-
-      <div class="row">
-        <input id="todoAddInput" maxlength="60" placeholder="물길 하나 더 내기" />
-        <button id="btnAddTodo" class="small">추가</button>
-      </div>
-
-      <p id="sleepNote" class="hint sleep" hidden>물고기가 수초 아래에서 쉬고 있어요. 미뤄도 괜찮아요 — 하나만 해내면 다시 깨어나요.</p>
-
-      <div class="panel-foot">
-        <button id="btnLetGo" class="link">꿈 놓아주기</button>
-      </div>
+      <button id="btnShareWish" class="share-wish">🔗 내 소원에 먹이 주러 와 줘 — 링크 복사</button>
+      <p class="hint tip">💡 다른 물고기를 눌러 소원을 읽고 🍚 먹이로 응원해 보세요. 같은 소원에는 하루 한 번 줄 수 있어요.</p>
     </section>
 
-    <!-- 지나간 별들 -->
+    <!-- 별이 된 내 소원 -->
     <section id="myStars" class="my-stars" hidden>
-      <h3>내가 띄운 별</h3>
+      <h3>별이 된 내 소원</h3>
       <ul id="myStarList"></ul>
     </section>
   </aside>
 
-  <!-- 다른 물고기 카드 -->
-  <div id="fishCard" class="fish-card" hidden>
+  <!-- 소원 카드 (물고기·별을 눌렀을 때) -->
+  <div id="wishCard" class="fish-card" hidden>
     <button class="close" id="cardClose" aria-label="닫기">×</button>
     <p class="fish-name" id="cardName"></p>
-    <p class="dream-text" id="cardDream"></p>
-    <div class="falls small">
+    <p class="dream-text" id="cardText"></p>
+    <div class="falls small" id="cardFalls">
       <div class="falls-bar"><div id="cardFill" class="falls-fill"></div></div>
       <p id="cardLabel" class="falls-label"></p>
     </div>
     <div class="card-actions">
-      <button id="btnFeed" class="primary small">🍚 응원 먹이 주기</button>
-      <button id="btnFollow" class="small">🐟 같이 헤엄치기</button>
-      <button id="btnWatch" class="small" title="이 물고기 시점으로 보기">🎥</button>
+      <button id="btnFeed" class="primary small">🍚 먹이 주며 응원하기</button>
     </div>
   </div>
 
-  <!-- 아래 막대: 헤엄 동작 + 정해진 말 물방울 -->
+  <!-- 처음 온 사람을 위한 안내 -->
   <div class="bottom-bars">
-    <p id="steerHint" class="steer-hint" hidden></p>
-    <nav id="moveBar" class="bubble-bar move-bar" hidden></nav>
-    <nav id="bubbleBar" class="bubble-bar"></nav>
+    <p id="steerHint" class="steer-hint">물고기를 누르면 소원이 보여요 · 가만히 보고 있으면 물고기가 소원을 띄워요</p>
   </div>
 
-  <!-- 모바일 방향 패드 -->
-  <div id="dpad" class="dpad" hidden>
-    <button data-k="up" class="dp-rise" aria-label="위로">⤒</button>
-    <button data-k="fwd" class="dp-up" aria-label="앞으로">▲</button>
-    <button data-k="down" class="dp-sink" aria-label="아래로">⤓</button>
-    <button data-k="left" class="dp-left" aria-label="왼쪽">◀</button>
-    <button data-k="right" class="dp-right" aria-label="오른쪽">▶</button>
-    <button data-k="back" class="dp-down" aria-label="뒤로">▼</button>
+  <!-- 방생 의식 -->
+  <div id="ritual" class="ritual" hidden>
+    <div class="ritual-box">
+      <p class="ritual-step" id="ritualStep">1 / 3</p>
+      <h2 id="ritualTitle"></h2>
+      <p class="ritual-wish" id="ritualWish"></p>
+      <!-- 1. 목어 -->
+      <button id="mokeo" class="mokeo" aria-label="목어 두드리기">
+        <svg viewBox="0 0 200 100" aria-hidden="true">
+          <defs>
+            <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#c98a4b" /><stop offset="1" stop-color="#7a4520" />
+            </linearGradient>
+          </defs>
+          <path d="M18 50 C40 12 120 8 160 34 L192 16 L186 50 L192 84 L160 66 C120 92 40 88 18 50 Z" fill="url(#wood)" stroke="#4a2810" stroke-width="3" />
+          <path d="M60 30 C80 46 80 54 60 70 M84 26 C104 46 104 54 84 74 M108 26 C128 46 128 54 108 74" fill="none" stroke="#5a3314" stroke-width="3" opacity=".6" />
+          <circle cx="38" cy="44" r="7" fill="#fff3d6" stroke="#4a2810" stroke-width="2" />
+          <circle cx="38" cy="44" r="3" fill="#2a1408" />
+          <path d="M20 54 Q30 58 40 56" stroke="#4a2810" stroke-width="3" fill="none" />
+        </svg>
+      </button>
+      <div class="ritual-dots" id="mokeoDots"><i></i><i></i><i></i></div>
+      <!-- 2. 합장 -->
+      <button id="pray" class="pray" hidden aria-label="눌러서 두 손 모으기">
+        <svg viewBox="0 0 120 120" class="ring"><circle cx="60" cy="60" r="54" /><circle id="prayRing" cx="60" cy="60" r="54" /></svg>
+        <span>🙏</span>
+      </button>
+      <p class="ritual-help" id="ritualHelp"></p>
+      <button class="link" id="ritualCancel">그만두기</button>
+    </div>
+  </div>
+
+  <!-- 소원 모아 보기 -->
+  <div id="listModal" class="list-modal" hidden>
+    <div class="list-box">
+      <header class="list-head">
+        <h2>소원 모아 보기</h2>
+        <button class="close" id="listClose" aria-label="닫기">×</button>
+      </header>
+      <nav class="list-tabs" id="listTabs">
+        <button data-tab="swimming" class="on">🐟 헤엄치는 소원</button>
+        <button data-tab="star">✦ 별이 된 소원</button>
+        <button data-tab="mine">내 소원</button>
+      </nav>
+      <div class="list-sort" id="listSort">
+        <button data-sort="new" class="on">새로운 순</button>
+        <button data-sort="near">곧 별이 될 순</button>
+      </div>
+      <ul class="list-items" id="listItems"></ul>
+    </div>
   </div>
 
   <div id="toasts" class="toasts"></div>

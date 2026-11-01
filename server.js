@@ -1,5 +1,8 @@
-// 등용문 연못 — 정적 파일 서버 + WebSocket 연못 방(room) 서버
+// 소원 연못 — 정적 파일 + 소원 저장(REST) + 실시간 알림(WebSocket) 서버
 // 의존성: ws 하나뿐. `npm start` 후 http://localhost:3000 접속.
+//
+// 소원 = 물고기 한 마리. 다른 사람이 하루 한 번씩 먹이(응원)를 주고,
+// GOAL 번 모이면 폭포를 올라 용이 되어 하늘의 별이 된다.
 
 const http = require('http');
 const fs = require('fs');
@@ -8,17 +11,15 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const PORT = Number(process.env.PORT) || 3000;
-const ROOM_CAP = Number(process.env.ROOM_CAP) || 24; // 한 연못에 함께 헤엄칠 수 있는 최대 인원
+const GOAL = Number(process.env.WISH_GOAL) || 21; // 삼칠일(21) — 사람이 늘면 108 로
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const THREE_DIR = path.join(__dirname, 'node_modules', 'three');
 const DATA_DIR = path.join(__dirname, 'data');
-const STARS_FILE = path.join(DATA_DIR, 'stars.json');
+const WISHES_FILE = path.join(DATA_DIR, 'wishes.json');
 
 const SPECIES = ['berry', 'lemon', 'coral', 'neon'];
-// 자유 채팅 대신 정해진 말만 주고받는다 (클라이언트 public/js/phrases.js 와 같은 순서)
-const PHRASE_COUNT = 6;
-// 헤엄 동작 개수 (public/js/data.js 의 MOVES 와 같은 순서)
-const MOVE_COUNT = 7;
+const MAX_TEXT = 60;
+const POND_LIMIT = 40; // 한 화면 연못에 띄울 최대 소원 수
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -33,99 +34,119 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
 };
 
-// ---------- 별(등용한 꿈) 저장 ----------
-let stars = {}; // { [pondId]: [{ name, dream, species, at }] }
+// ---------- 소원 저장 ----------
+/**
+ * @typedef {{ id: string, text: string, isPublic: boolean, species: string, name: string,
+ *   owner: string, createdAt: number, feeds: number, fedBy: Record<string, string>,
+ *   status: 'swimming' | 'star', starAt: number | null }} Wish
+ */
+/** @type {Wish[]} */
+let wishes = [];
 try {
-  stars = JSON.parse(fs.readFileSync(STARS_FILE, 'utf8'));
+  wishes = JSON.parse(fs.readFileSync(WISHES_FILE, 'utf8'));
 } catch (_) {
-  stars = {};
+  wishes = [];
 }
-let starsDirty = false;
+const byId = new Map(wishes.map((w) => [w.id, w]));
+
+let dirty = false;
+function markDirty() {
+  dirty = true;
+}
 setInterval(() => {
-  if (!starsDirty) return;
-  starsDirty = false;
+  if (!dirty) return;
+  dirty = false;
   fs.mkdir(DATA_DIR, { recursive: true }, () => {
-    fs.writeFile(STARS_FILE, JSON.stringify(stars), () => {});
+    const tmp = WISHES_FILE + '.tmp';
+    fs.writeFile(tmp, JSON.stringify(wishes), (err) => {
+      if (!err) fs.rename(tmp, WISHES_FILE, () => {});
+    });
   });
-}, 5000).unref();
+}, 2000).unref();
 
-// ---------- 방 관리 ----------
-/** @type {Map<string, Map<string, Client>>} */
-const rooms = new Map();
+// 익명 방문자 표시: 브라우저가 만든 비밀값(uid)을 해시해서만 보관
+const hashUid = (uid) =>
+  typeof uid === 'string' && /^[a-f0-9]{16,64}$/.test(uid) ? crypto.createHash('sha256').update(uid).digest('hex').slice(0, 24) : null;
 
-function roomOf(id) {
-  if (!rooms.has(id)) rooms.set(id, new Map());
-  return rooms.get(id);
-}
-
-function validPondId(s) {
-  return typeof s === 'string' && /^[a-z0-9-]{1,32}$/.test(s);
-}
-
-// 사람이 덜 찬 연못부터 배정 (yeon-1, yeon-2 …)
-function assignPond() {
-  for (let i = 1; i < 1000; i++) {
-    const id = `yeon-${i}`;
-    const r = rooms.get(id);
-    if (!r || r.size < ROOM_CAP) return id;
-  }
-  return `yeon-${Date.now() % 100000}`;
-}
+// 하루 기준은 한국 시간
+const dayKey = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
 
 function clampStr(v, max) {
   if (typeof v !== 'string') return '';
-  return v.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, max);
+  return v.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-function clampInt(v, min, max) {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return min;
-  return Math.max(min, Math.min(max, n));
-}
-
-function sanitizeFish(raw) {
-  const f = raw && typeof raw === 'object' ? raw : {};
-  const total = clampInt(f.total, 0, 12);
+function view(w, me) {
   return {
-    name: clampStr(f.name, 16) || '이름 없는 물고기',
-    species: SPECIES.includes(f.species) ? f.species : 'berry',
-    dream: clampStr(f.dream, 80),
-    isPublic: !!f.isPublic,
-    done: clampInt(f.done, 0, total),
-    total,
-    sleeping: !!f.sleeping,
-    followId: typeof f.followId === 'string' ? f.followId.slice(0, 40) : null,
-    hasDream: !!f.hasDream,
+    id: w.id,
+    text: w.isPublic ? w.text : '',
+    isPublic: w.isPublic,
+    species: w.species,
+    name: w.name,
+    feeds: w.feeds,
+    goal: GOAL,
+    status: w.status,
+    createdAt: w.createdAt,
+    starAt: w.starAt,
+    mine: !!me && w.owner === me,
+    fedToday: !!me && w.fedBy[me] === dayKey(),
   };
 }
 
-function publicView(c) {
-  const f = c.fish;
-  return {
-    id: c.id,
-    name: f.name,
-    species: f.species,
-    dream: f.isPublic ? f.dream : '',
-    hasDream: f.hasDream,
-    done: f.done,
-    total: f.total,
-    sleeping: f.sleeping,
-    followId: f.followId,
-  };
-}
-
-function send(ws, msg) {
-  if (ws.readyState === 1) ws.send(JSON.stringify(msg));
-}
-
-function broadcast(room, msg, exceptId) {
-  const s = JSON.stringify(msg);
-  for (const c of room.values()) {
-    if (c.id !== exceptId && c.ws.readyState === 1) c.ws.send(s);
+// 간단한 횟수 제한 (IP 기준)
+const buckets = new Map();
+function limited(key, max, windowMs) {
+  const now = Date.now();
+  const b = buckets.get(key) || { n: 0, reset: now + windowMs };
+  if (now > b.reset) {
+    b.n = 0;
+    b.reset = now + windowMs;
   }
+  b.n++;
+  buckets.set(key, b);
+  return b.n > max;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of buckets) if (now > b.reset) buckets.delete(k);
+}, 60000).unref();
+
+// ---------- 실시간 (WebSocket) ----------
+const sockets = new Set();
+function broadcast(msg) {
+  const s = JSON.stringify(msg);
+  for (const ws of sockets) if (ws.readyState === 1) ws.send(s);
+}
+let onlineTimer = null;
+function announceOnline() {
+  clearTimeout(onlineTimer);
+  onlineTimer = setTimeout(() => broadcast({ t: 'online', n: sockets.size }), 400);
 }
 
 // ---------- HTTP ----------
+function json(res, code, body) {
+  res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let data = '';
+    req.on('data', (c) => {
+      data += c;
+      if (data.length > 4096) req.destroy();
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(data || '{}'));
+      } catch (_) {
+        resolve({});
+      }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
+
 function serveFile(res, file) {
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) {
@@ -148,20 +169,131 @@ function safeJoin(base, rel) {
   return p.startsWith(base + path.sep) || p === base ? p : null;
 }
 
+function stats() {
+  const today = dayKey();
+  let stars = 0;
+  let todayN = 0;
+  for (const w of wishes) {
+    if (w.status === 'star') stars++;
+    if (new Date(w.createdAt + 9 * 3600 * 1000).toISOString().slice(0, 10) === today) todayN++;
+  }
+  return { total: wishes.length, stars, today: todayN, online: sockets.size, goal: GOAL };
+}
+
+async function api(req, res, p, url) {
+  const ip = req.socket.remoteAddress || '?';
+  const me = hashUid(url.searchParams.get('uid'));
+
+  // 통계
+  if (p === '/api/stats' && req.method === 'GET') return json(res, 200, stats());
+
+  // 소원 목록: status=swimming|star, sort=mix|new|near|recent, mine=1
+  if (p === '/api/wishes' && req.method === 'GET') {
+    const status = url.searchParams.get('status') || 'swimming';
+    const sort = url.searchParams.get('sort') || 'new';
+    const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit')) || 60));
+    let list;
+    if (url.searchParams.get('mine') === '1') {
+      list = me ? wishes.filter((w) => w.owner === me).sort((a, b) => b.createdAt - a.createdAt) : [];
+    } else {
+      list = wishes.filter((w) => w.status === status);
+      if (sort === 'mix') {
+        // 연못에 띄울 묶음: 내 소원 + 새 소원 절반 + 곧 별이 될 소원 절반
+        const pick = new Map();
+        for (const w of list) if (me && w.owner === me) pick.set(w.id, w);
+        const newest = [...list].sort((a, b) => b.createdAt - a.createdAt);
+        const nearest = [...list].sort((a, b) => b.feeds - a.feeds || b.createdAt - a.createdAt);
+        for (let i = 0; pick.size < limit && (i < newest.length || i < nearest.length); i++) {
+          if (newest[i]) pick.set(newest[i].id, newest[i]);
+          if (pick.size < limit && nearest[i]) pick.set(nearest[i].id, nearest[i]);
+        }
+        list = [...pick.values()];
+      } else if (sort === 'near') list = [...list].sort((a, b) => b.feeds - a.feeds || b.createdAt - a.createdAt);
+      else if (sort === 'recent') list = [...list].sort((a, b) => (b.starAt || 0) - (a.starAt || 0));
+      else list = [...list].sort((a, b) => b.createdAt - a.createdAt);
+    }
+    return json(res, 200, { goal: GOAL, wishes: list.slice(0, limit).map((w) => view(w, me)) });
+  }
+
+  // 소원 하나
+  const one = /^\/api\/wishes\/([a-f0-9]{8,16})$/.exec(p);
+  if (one && req.method === 'GET') {
+    const w = byId.get(one[1]);
+    return w ? json(res, 200, { goal: GOAL, wish: view(w, me) }) : json(res, 404, { error: 'not_found' });
+  }
+
+  // 소원 방생
+  if (p === '/api/wishes' && req.method === 'POST') {
+    const body = await readBody(req);
+    const owner = hashUid(body.uid);
+    const text = clampStr(body.text, MAX_TEXT);
+    if (!owner) return json(res, 400, { error: 'bad_uid' });
+    if (!text) return json(res, 400, { error: 'empty' });
+    if (limited(`w:${ip}`, 6, 3600 * 1000)) return json(res, 429, { error: 'too_many' });
+    if (wishes.some((w) => w.owner === owner && w.status === 'swimming')) return json(res, 409, { error: 'already_swimming' });
+    /** @type {Wish} */
+    const w = {
+      id: crypto.randomBytes(5).toString('hex'),
+      text,
+      isPublic: body.isPublic !== false,
+      species: SPECIES.includes(body.species) ? body.species : SPECIES[0],
+      name: clampStr(body.name, 16) || '이름 없는 물고기',
+      owner,
+      createdAt: Date.now(),
+      feeds: 0,
+      fedBy: {},
+      status: 'swimming',
+      starAt: null,
+    };
+    wishes.push(w);
+    byId.set(w.id, w);
+    markDirty();
+    broadcast({ t: 'wish:new', wish: view(w, null) });
+    return json(res, 200, { goal: GOAL, wish: view(w, owner) });
+  }
+
+  // 먹이(응원) 주기: 같은 소원에는 하루 한 번, 내 소원에는 못 줌
+  const feed = /^\/api\/wishes\/([a-f0-9]{8,16})\/feed$/.exec(p);
+  if (feed && req.method === 'POST') {
+    const body = await readBody(req);
+    const who = hashUid(body.uid);
+    const w = byId.get(feed[1]);
+    if (!who) return json(res, 400, { error: 'bad_uid' });
+    if (!w) return json(res, 404, { error: 'not_found' });
+    if (w.status !== 'swimming') return json(res, 409, { error: 'already_star' });
+    if (w.owner === who) return json(res, 403, { error: 'own_wish' });
+    if (w.fedBy[who] === dayKey()) return json(res, 429, { error: 'fed_today' });
+    if (limited(`f:${ip}`, 120, 3600 * 1000)) return json(res, 429, { error: 'too_many' });
+    w.fedBy[who] = dayKey();
+    w.feeds++;
+    let becameStar = false;
+    if (w.feeds >= GOAL) {
+      w.status = 'star';
+      w.starAt = Date.now();
+      becameStar = true;
+    }
+    markDirty();
+    broadcast({ t: 'wish:fed', id: w.id, feeds: w.feeds });
+    if (becameStar) broadcast({ t: 'wish:star', wish: view(w, null) });
+    return json(res, 200, { goal: GOAL, wish: view(w, who), becameStar });
+  }
+
+  return json(res, 404, { error: 'unknown' });
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
-  const p = decodeURIComponent(url.pathname);
-
-  if (p === '/api/assign') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ pond: assignPond() }));
-    return;
+  let p;
+  try {
+    p = decodeURIComponent(url.pathname);
+  } catch (_) {
+    res.writeHead(400);
+    return res.end();
   }
-  if (p === '/api/health') {
-    let n = 0;
-    for (const r of rooms.values()) n += r.size;
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, rooms: rooms.size, swimmers: n }));
+
+  if (p === '/api/health') return json(res, 200, { ok: true, wishes: wishes.length, online: sockets.size });
+  if (p.startsWith('/api/')) {
+    api(req, res, p, url).catch(() => json(res, 500, { error: 'server' }));
     return;
   }
   if (p.startsWith('/vendor/three/')) {
@@ -172,142 +304,18 @@ const server = http.createServer((req, res) => {
   return f ? serveFile(res, f) : (res.writeHead(400), res.end());
 });
 
-// ---------- WebSocket ----------
-const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 8 * 1024 });
-
-/**
- * @typedef {{ id: string, ws: import('ws').WebSocket, pond: string, fish: any, lastAction: number }} Client
- */
-
-wss.on('connection', (ws, req) => {
-  const url = new URL(req.url, 'http://x');
-  let pond = url.searchParams.get('pond');
-  if (!validPondId(pond)) pond = assignPond();
-  const room = roomOf(pond);
-
-  if (room.size >= ROOM_CAP) {
-    send(ws, { t: 'full', suggest: assignPond() });
-    ws.close();
-    return;
-  }
-
-  /** @type {Client} */
-  const client = {
-    id: crypto.randomBytes(6).toString('hex'),
-    ws,
-    pond,
-    fish: sanitizeFish({}),
-    lastAction: 0,
-    joined: false,
-  };
-
-  // 너무 잦은 행동(먹이 연타 등)을 막는 간단한 제한
-  const allow = (ms) => {
-    const now = Date.now();
-    if (now - client.lastAction < ms) return false;
-    client.lastAction = now;
-    return true;
-  };
-
-  ws.on('message', (data) => {
-    let m;
-    try {
-      m = JSON.parse(data);
-    } catch (_) {
-      return;
-    }
-    if (!m || typeof m.t !== 'string') return;
-
-    switch (m.t) {
-      case 'hello': {
-        client.fish = sanitizeFish(m.fish);
-        if (!client.joined) {
-          client.joined = true;
-          room.set(client.id, client);
-          send(ws, {
-            t: 'welcome',
-            id: client.id,
-            pond,
-            cap: ROOM_CAP,
-            fishes: [...room.values()].filter((c) => c.id !== client.id).map(publicView),
-            stars: (stars[pond] || []).slice(-200),
-          });
-          broadcast(room, { t: 'join', fish: publicView(client) }, client.id);
-        }
-        break;
-      }
-      case 'update': {
-        if (!client.joined) return;
-        client.fish = sanitizeFish(m.fish);
-        broadcast(room, { t: 'update', fish: publicView(client) }, client.id);
-        break;
-      }
-      case 'feed': {
-        // 다른 사람 물고기에게 응원 먹이 던지기
-        if (!client.joined || !allow(700)) return;
-        const target = room.get(m.to);
-        if (!target || target.id === client.id) return;
-        broadcast(room, { t: 'feed', from: client.id, to: target.id, fromName: client.fish.name });
-        break;
-      }
-      case 'bubble': {
-        // 정해진 문구 말풍선
-        if (!client.joined || !allow(1200)) return;
-        const idx = clampInt(m.i, 0, PHRASE_COUNT - 1);
-        broadcast(room, { t: 'bubble', from: client.id, i: idx });
-        break;
-      }
-      case 'goto': {
-        // 내 물고기를 누른 자리로 — 다른 사람 화면에서도 같은 곳으로 헤엄치게
-        if (!client.joined) return;
-        const now = Date.now();
-        if (now - (client.lastGoto || 0) < 200) return;
-        client.lastGoto = now;
-        const p = Array.isArray(m.p) ? m.p.slice(0, 3).map(Number) : [];
-        if (p.length !== 3 || !p.every(Number.isFinite)) return;
-        broadcast(room, { t: 'goto', from: client.id, p: p.map((v) => Math.max(-30, Math.min(30, v))) }, client.id);
-        break;
-      }
-      case 'act': {
-        // 헤엄 동작(질주, 맴돌기 등) — 다른 사람 화면에서도 같은 동작을 하게
-        if (!client.joined || !allow(500)) return;
-        broadcast(room, { t: 'act', from: client.id, i: clampInt(m.i, 0, MOVE_COUNT - 1) }, client.id);
-        break;
-      }
-      case 'leap': {
-        // TODO 하나 완료 → 폭포 한 칸 도약
-        if (!client.joined) return;
-        broadcast(room, { t: 'leap', from: client.id, done: client.fish.done, total: client.fish.total }, client.id);
-        break;
-      }
-      case 'ascend': {
-        // 꿈 완료 → 등용. 연못 하늘에 별로 남는다.
-        if (!client.joined || !allow(3000)) return;
-        const star = {
-          name: client.fish.name,
-          dream: client.fish.isPublic ? client.fish.dream : '',
-          species: client.fish.species,
-          // 클라이언트가 정한 시각을 쓰면 모두의 하늘에서 별 자리가 같아짐 (1분 이내만 인정)
-          at: Math.abs(Number(m.at) - Date.now()) < 60000 ? Math.floor(Number(m.at)) : Date.now(),
-        };
-        (stars[pond] ||= []).push(star);
-        if (stars[pond].length > 500) stars[pond].splice(0, stars[pond].length - 500);
-        starsDirty = true;
-        broadcast(room, { t: 'ascend', from: client.id, star });
-        break;
-      }
-      default:
-        break;
-    }
-  });
-
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 });
+wss.on('connection', (ws) => {
+  sockets.add(ws);
+  ws.isAlive = true;
+  ws.on('pong', () => (ws.isAlive = true));
+  ws.send(JSON.stringify({ t: 'online', n: sockets.size }));
+  announceOnline();
+  ws.on('message', () => {}); // 클라이언트 → 서버 메시지는 쓰지 않음 (모든 행동은 REST)
   ws.on('close', () => {
-    if (room.get(client.id) === client) {
-      room.delete(client.id);
-      broadcast(room, { t: 'leave', id: client.id });
-    }
+    sockets.delete(ws);
+    announceOnline();
   });
-
   ws.on('error', () => {});
 });
 
@@ -322,11 +330,7 @@ setInterval(() => {
     ws.ping();
   }
 }, 30000).unref();
-wss.on('connection', (ws) => {
-  ws.isAlive = true;
-  ws.on('pong', () => (ws.isAlive = true));
-});
 
 server.listen(PORT, () => {
-  console.log(`🐟 등용문 연못: http://localhost:${PORT}`);
+  console.log(`🐟 소원 연못: http://localhost:${PORT}  (별까지 먹이 ${GOAL}번)`);
 });

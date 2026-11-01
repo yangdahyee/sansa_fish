@@ -86,6 +86,12 @@ export const sfx = {
   chime() {
     [880, 1320].forEach((f, i) => tone(f, { dur: 0.9, vol: 0.12, type: 'triangle', when: i * 0.08 }));
   },
+  // 목어: 속이 빈 나무를 두드리는 '똑'
+  mok() {
+    tone(620, { type: 'triangle', dur: 0.22, vol: 0.32, slide: 0.82 });
+    tone(1240, { type: 'sine', dur: 0.08, vol: 0.1 });
+    tone(310, { type: 'sine', dur: 0.35, vol: 0.14, when: 0.01, slide: 0.9 });
+  },
   bubble() {
     tone(700, { dur: 0.1, vol: 0.15, slide: 1.8 });
   },

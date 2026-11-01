@@ -1,7 +1,7 @@
 {
-  "name": "등용문 연못",
-  "short_name": "등용문",
-  "description": "미뤄둔 꿈을 물고기로 띄우고, 할 일을 해낼 때마다 폭포를 거슬러 오르는 공유 연못",
+  "name": "소원 연못",
+  "short_name": "소원 연못",
+  "description": "소원을 물고기에 담아 연못에 놓아주세요",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b1a2e",

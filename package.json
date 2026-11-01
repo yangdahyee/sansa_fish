@@ -1,8 +1,8 @@
 {
-  "name": "deungyongmun-pond",
+  "name": "wish-pond",
   "version": "0.1.0",
   "private": true,
-  "description": "등용문 연못 — 미뤄둔 꿈을 물고기로 띄우고, 할 일을 해낼 때마다 폭포를 거슬러 오르는 공유 연못",
+  "description": "소원 연못 — 소원을 물고기에 담아 놓아주면, 사람들의 먹이(응원) 21번에 용이 되어 별이 되는 3D 웹 연못",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -307,3 +307,104 @@ body.cinema .letterbox { height: 9vh; }
   .fish-card { left: 12px; right: 12px; width: auto; bottom: 76px; }
   .toasts { left: 12px; right: 12px; }
 }
+
+
+/* =====================================================================
+   소원 연못
+   ===================================================================== */
+.steer-hint { transition: opacity 1.2s; }
+.steer-hint.fade { opacity: 0; pointer-events: none; }
+.share-wish {
+  width: 100%; margin: 2px 0 10px; padding: 10px; font-size: 13px; font-weight: 700;
+  background: rgba(255, 207, 107, .14); border: 1px solid rgba(255, 207, 107, .4); color: var(--gold);
+}
+.share-wish:hover { background: rgba(255, 207, 107, .24); }
+.hint b { color: var(--gold); font-weight: 700; }
+.fish-card.is-star { border-color: rgba(255, 207, 107, .45); box-shadow: 0 0 40px rgba(255, 200, 100, .18), 0 20px 50px rgba(0,0,0,.35); }
+.fish-card.is-star .falls-fill { background: linear-gradient(90deg, #ffe7a8, var(--gold)); }
+.fish-card .dream-text { font-family: "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif; }
+#btnFeed:disabled { opacity: .6; cursor: default; filter: grayscale(.3); }
+
+/* 수면에 떠오른 소원 */
+.float-text.wish-bubble {
+  font-family: "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif;
+  font-size: 15px; font-weight: 600; max-width: 320px; white-space: normal; text-align: center; line-height: 1.4;
+  color: #fffaf0; padding: 8px 14px; border-radius: 18px;
+  background: radial-gradient(ellipse at 50% 30%, rgba(255,255,255,.22), rgba(120, 190, 220, .18));
+  border: 1px solid rgba(255,255,255,.35); box-shadow: 0 0 22px rgba(160, 220, 255, .25), inset 0 0 12px rgba(255,255,255,.15);
+  backdrop-filter: blur(2px); text-shadow: 0 1px 6px rgba(0, 20, 40, .7); word-break: keep-all;
+}
+
+/* ---------- 방생 의식 ---------- */
+.ritual {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: center;
+  background: radial-gradient(ellipse at 50% 45%, rgba(10, 22, 40, .55), rgba(3, 8, 18, .88));
+  animation: rise .4s ease-out;
+}
+body.in-ritual .panel, body.in-ritual .bottom-bars, body.in-ritual .fish-card, body.in-ritual .top-actions { opacity: 0; pointer-events: none; }
+.ritual-box { text-align: center; padding: 24px; max-width: 520px; }
+.ritual-step { margin: 0; color: var(--ink-dim); font-size: 12px; letter-spacing: .3em; }
+.ritual h2 { margin: 10px 0 8px; font-size: clamp(20px, 3.2vw, 28px); color: #fff3d6; word-break: keep-all; }
+.ritual-wish {
+  margin: 0 0 22px; font-family: "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif;
+  font-size: clamp(18px, 2.6vw, 24px); color: var(--gold); transition: text-shadow .2s; word-break: keep-all;
+}
+.ritual-help { min-height: 1.4em; margin: 18px 0 6px; color: var(--ink-dim); font-size: 13px; }
+.mokeo { background: none; padding: 0; width: min(260px, 70vw); filter: drop-shadow(0 10px 24px rgba(0,0,0,.5)); }
+.mokeo:hover { background: none; transform: translateY(-2px); }
+.mokeo svg { width: 100%; display: block; }
+.mokeo.knock { animation: knock .35s cubic-bezier(.3, 1.8, .5, 1); }
+@keyframes knock { 30% { transform: rotate(-4deg) scale(.95); } 60% { transform: rotate(2deg) scale(1.02); } }
+.ritual-dots { display: flex; gap: 10px; justify-content: center; margin-top: 14px; }
+.ritual-dots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255, 207, 107, .6); transition: background .2s, box-shadow .2s; }
+.ritual-dots i.on { background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+.pray {
+  position: relative; width: 132px; height: 132px; border-radius: 50%; padding: 0; margin: 4px auto 0; display: grid; place-items: center;
+  background: radial-gradient(circle, rgba(255, 210, 122, .18), rgba(255, 210, 122, .04)); user-select: none; -webkit-user-select: none; touch-action: none;
+}
+.pray span { font-size: 54px; }
+.pray:active { transform: scale(.97); }
+.pray .ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.pray .ring circle { fill: none; stroke-width: 6; stroke: rgba(255, 255, 255, .12); }
+.pray .ring #prayRing { stroke: var(--gold); stroke-linecap: round; stroke-dasharray: 339; stroke-dashoffset: 339; filter: drop-shadow(0 0 6px var(--gold)); }
+
+/* ---------- 모아 보기 ---------- */
+.list-modal { position: fixed; inset: 0; z-index: 35; display: grid; place-items: center; background: rgba(3, 8, 18, .6); backdrop-filter: blur(3px); animation: rise .25s ease-out; }
+.list-box {
+  width: min(640px, calc(100% - 24px)); max-height: min(78vh, 720px); display: flex; flex-direction: column;
+  background: var(--glass); border: 1px solid var(--glass-line); border-radius: 20px; backdrop-filter: blur(16px);
+  box-shadow: 0 30px 70px rgba(0,0,0,.5); overflow: hidden;
+}
+.list-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px 6px; }
+.list-head h2 { margin: 0; font-size: 18px; }
+.list-head .close { width: 32px; height: 32px; padding: 0; background: none; font-size: 20px; }
+.list-tabs, .list-sort { display: flex; gap: 6px; padding: 6px 18px; }
+.list-tabs button, .list-sort button { padding: 7px 12px; font-size: 13px; border-radius: 99px; background: rgba(255,255,255,.06); }
+.list-tabs button.on { background: rgba(255, 207, 107, .9); color: #3a1800; font-weight: 700; }
+.list-sort button { font-size: 12px; padding: 5px 10px; }
+.list-sort button.on { background: rgba(255,255,255,.18); }
+.list-items {
+  list-style: none; margin: 4px 0 0; padding: 6px 12px 16px; overflow: auto; flex: 1;
+  scrollbar-width: thin; scrollbar-color: rgba(255, 207, 107, .45) transparent;
+}
+.list-items::-webkit-scrollbar { width: 6px; }
+.list-items::-webkit-scrollbar-thumb { background: rgba(255, 207, 107, .45); border-radius: 99px; }
+.list-item { display: flex; gap: 12px; align-items: center; padding: 12px; margin: 6px 0; border-radius: 14px; background: rgba(255,255,255,.05); }
+.list-item.is-star { background: linear-gradient(90deg, rgba(255, 207, 107, .12), rgba(255,255,255,.04)); }
+.list-item .dot { flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 10px currentColor; }
+.li-body { flex: 1; min-width: 0; }
+.li-text { margin: 0 0 4px; font-family: "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif; font-size: 15px; line-height: 1.4; word-break: keep-all; }
+.li-meta { margin: 0 0 6px; font-size: 12px; color: var(--ink-dim); }
+.li-body .falls-bar { height: 6px; }
+.li-acts { display: flex; gap: 6px; }
+.li-acts button { width: 40px; padding: 8px 0; }
+.li-acts button:disabled { opacity: .55; }
+.list-empty { padding: 40px 10px; text-align: center; color: var(--ink-dim); font-size: 14px; }
+@media (max-width: 720px) {
+  #btnList span { display: none; }
+  #btnList { width: 40px; padding: 8px 0; }
+  .list-box { max-height: 86vh; }
+}
+
+/* 안내 문구는 누를 수 없는 글씨 — 아래 버튼을 가리지 않게 */
+.bottom-bars, .steer-hint { pointer-events: none; }
