@@ -282,6 +282,21 @@ export class Pond {
       return json(200, { goal: this.goal, wish: this.view(w, who), becameStar });
     }
 
+    // 내 소원 지우기 (헤엄치는 소원이든 별이든, 주인만)
+    const del = /^\/api\/wishes\/([a-f0-9]{8,16})\/delete$/.exec(p);
+    if (del && method === 'POST') {
+      const who = await hashUid(body.uid);
+      const w = this.byId.get(del[1]);
+      if (!who) return json(400, { error: 'bad_uid' });
+      if (!w) return json(404, { error: 'not_found' });
+      if (w.owner !== who) return json(403, { error: 'not_owner' });
+      this.wishes = this.wishes.filter((x) => x !== w);
+      this.byId.delete(w.id);
+      await this.remove(w);
+      this.broadcast({ t: 'wish:hide', id: w.id });
+      return json(200, { ok: true });
+    }
+
     // 신고: 한 사람이 한 소원에 한 번, REPORT_HIDE 명이 신고하면 자동으로 숨김
     const rep = /^\/api\/wishes\/([a-f0-9]{8,16})\/report$/.exec(p);
     if (rep && method === 'POST') {

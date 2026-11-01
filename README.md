@@ -13,6 +13,10 @@
 | **수면** | 물고기가 가끔 올라와 소원 한 줄을 띄움 | 가만히 보고만 있어도 남의 소원이 하나씩 읽힘 |
 | **하늘** | 먹이 5번을 받아 이루어진 소원 | 별을 누르면 소원과 이루어진 날 |
 
+**✦ 하늘 보기** 버튼을 누르면 카메라가 하늘을 올려다보고, 별을 누르면 이루어진 소원이 보입니다 (손가락으로도 잘 눌리게 가까운 별을 찾아 줌). 목록에서 별을 고르면 그 별로 카메라가 옮겨 갑니다.
+
+**내 소원 지우기** — 헤엄치는 소원이든 이루어진 별이든 주인만 지울 수 있습니다 (패널·카드·목록의 🗑).
+
 버튼 하나로 **소원 모아 보기**(헤엄치는 소원 / 별이 된 소원 / 내 소원, 새로운 순·곧 별이 될 순)도 열 수 있습니다.
 
 ## 흐름
@@ -55,7 +59,7 @@
 
 - 방문자는 브라우저가 만든 익명 아이디를 **해시로만** 보관합니다.
 - 한 사람당 헤엄치는 소원은 한 번에 하나, 별이 되면 새 소원을 띄울 수 있습니다.
-- REST: `GET /api/stats`, `GET /api/wishes?status=swimming|star&sort=mix|new|near|recent`, `GET /api/wishes?mine=1`, `GET /api/wishes/:id`, `POST /api/wishes`, `POST /api/wishes/:id/feed`, `POST /api/wishes/:id/report`
+- REST: `GET /api/stats`, `GET /api/wishes?status=swimming|star&sort=mix|new|near|recent`, `GET /api/wishes?mine=1`, `GET /api/wishes/:id`, `POST /api/wishes`, `POST /api/wishes/:id/feed`, `POST /api/wishes/:id/report`, `POST /api/wishes/:id/delete` (주인만)
 - 관리자: `GET /api/admin/stats`, `GET /api/admin/wishes?filter=&q=`, `POST /api/admin/wishes/:id {action}`, `GET /api/admin/export` (헤더 `Authorization: Bearer <ADMIN_TOKEN>`)
 - 방문자 아이디는 `x-pond-uid` 헤더로 주고받습니다 (주소창·서버 기록에 남지 않게)
 - WebSocket(`/ws`)은 알림 전용: 새 소원·먹이·별·접속자 수

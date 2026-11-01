@@ -447,3 +447,14 @@ body.in-ritual #labels { opacity: 0; }
 @media (max-width: 720px) {
   .caption { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 84px); padding: 0 16px; font-size: 14px; }
 }
+
+/* 하늘 보기 버튼, 내 별 목록 */
+#btnSky.on { background: rgba(255, 207, 107, .9); color: #3a1800; font-weight: 700; }
+.my-stars li { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.my-stars .star-link { cursor: pointer; }
+.my-stars .star-link:hover { color: var(--gold); text-decoration: underline; }
+.my-stars li .link { flex: none; font-size: 11px; }
+@media (max-width: 720px) {
+  #btnSky span { display: none; }
+  #btnSky { width: 40px; padding: 8px 0; }
+}

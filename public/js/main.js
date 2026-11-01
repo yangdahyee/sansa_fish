@@ -190,7 +190,19 @@ async function main() {
     ul.textContent = '';
     myStars.forEach((w) => {
       const li = document.createElement('li');
-      li.textContent = `${w.text || '마음속 소원'} (${fmtDate(w.starAt)})`;
+      const t = document.createElement('span');
+      t.textContent = `${w.text || '마음속 소원'} (${fmtDate(w.starAt)})`;
+      t.className = 'star-link';
+      t.title = '하늘에서 보기';
+      t.onclick = () => {
+        showStar(w);
+        openCard({ ...w, status: 'star', mine: true });
+      };
+      const x = document.createElement('button');
+      x.className = 'link';
+      x.textContent = '지우기';
+      x.onclick = () => deleteWish(w.id);
+      li.append(t, x);
       ul.appendChild(li);
     });
     syncAvatar();
@@ -234,16 +246,17 @@ async function main() {
     const star = w.status === 'star';
     $('wishCard').hidden = false;
     $('wishCard').classList.toggle('is-star', star);
-    $('cardName').textContent = `${star ? '✦ 별이 된 소원' : SPECIES[w.species]?.label || ''} · ${w.name}${w.mine ? ' (나)' : ''}`;
+    $('cardName').textContent = `${star ? '✦ 이루어진 소원' : SPECIES[w.species]?.label || ''} · ${w.name}${w.mine ? ' (나)' : ''}`;
     $('cardText').textContent = wishLine(w);
     $('cardFill').style.width = `${Math.min(100, (w.feeds / GOAL) * 100)}%`;
     $('cardLabel').textContent = star
-      ? `${w.feeds}명의 응원으로 ${fmtDate(w.starAt)}에 별이 되었어요`
+      ? `먹이 ${w.feeds}번으로 ${fmtDate(w.starAt)}에 이루어졌어요`
       : `✨ 먹이 ${w.feeds} / ${GOAL}${w.feeders ? ` · ${w.feeders}명이 응원` : ''}`;
     const b = $('btnFeed');
     b.hidden = star;
     b.disabled = false;
     b.textContent = w.mine ? `✨ 내 소원에 먹이 주기 (${w.feeds}/${GOAL})` : `✨ 먹이 주기 (${w.feeds}/${GOAL})`;
+    $('btnDelete').hidden = !w.mine;
     const r = $('btnReport');
     r.hidden = !!w.mine || !w.text;
     r.disabled = !!w.reportedByMe;
@@ -314,6 +327,17 @@ async function main() {
   }
   $('btnFeed').onclick = () => cardId && feedWish(cardId);
 
+  $('btnDelete').onclick = () => cardId && deleteWish(cardId);
+  $('btnDeleteMine').onclick = () => myWish && deleteWish(myWish.id);
+
+  // ---------- 하늘 보기 ----------
+  $('btnSky').onclick = () => world.setSkyView(!world.skyView || world.skyView.returning);
+  world.onSkyChange = (on) => {
+    $('btnSky').classList.toggle('on', on);
+    $('btnSky').querySelector('span').textContent = on ? ' 연못으로' : ' 하늘 보기';
+    if (on) caption('별을 누르면 이루어진 소원이 보여요', 3500);
+  };
+
   // ---------- 신고 ----------
   $('btnReport').onclick = async () => {
     const id = cardId;
@@ -331,6 +355,33 @@ async function main() {
   };
 
   // 숨겨지거나 지워진 소원은 연못·하늘에서 내림
+  // 하늘에서 그 별 보기
+  function showStar(w) {
+    if (!world.hasStar(w.id)) world.addStar({ ...w, status: 'star' });
+    world.setSkyView(true, world.starPosition(w));
+  }
+
+  // 내 소원 지우기 (헤엄치는 소원이든 별이든)
+  async function deleteWish(id) {
+    const w = wishes.get(id) || myStars.find((x) => x.id === id) || (myWish?.id === id ? myWish : null);
+    if (!confirm(`이 소원을 지울까요? 연못과 하늘에서 사라지고 되돌릴 수 없어요.${w?.text ? `\n\n“${w.text}”` : ''}`)) return false;
+    try {
+      await api(`/api/wishes/${id}/delete`, {});
+      if (myWish?.id === id) myWish = null;
+      myStars = myStars.filter((x) => x.id !== id);
+      dropWish(id);
+      stats.total = Math.max(0, stats.total - 1);
+      if (w?.status === 'star') stats.stars = Math.max(0, stats.stars - 1);
+      renderStats();
+      renderPanel();
+      toast('소원을 지웠어요. 언제든 새 소원을 빌 수 있어요');
+      return true;
+    } catch (e) {
+      toast(e.code === 'not_owner' ? '내 소원만 지울 수 있어요' : '지우지 못했어요. 잠시 뒤 다시 해 주세요');
+      return false;
+    }
+  }
+
   function dropWish(id) {
     wishes.delete(id);
     if (world.getFish(id) && !world.getFish(id).action) world.removeFish(id);
@@ -639,10 +690,23 @@ async function main() {
       look.title = w.status === 'star' ? '하늘에서 보기' : '연못에서 보기';
       look.onclick = () => {
         closeList();
-        if (w.status === 'swimming') putFish(w, { splash: !world.getFish(w.id) });
+        if (w.status === 'swimming') {
+          if (world.skyView) world.setSkyView(false);
+          putFish(w, { splash: !world.getFish(w.id) });
+        } else showStar(w);
         openCard(wishes.get(w.id));
       };
       acts.appendChild(look);
+      if (w.mine) {
+        const del = document.createElement('button');
+        del.className = 'small';
+        del.textContent = '🗑';
+        del.title = '내 소원 지우기';
+        del.onclick = async () => {
+          if (await deleteWish(w.id)) li.remove();
+        };
+        acts.appendChild(del);
+      }
       li.append(dot, body, acts);
       ul.appendChild(li);
     }

@@ -419,7 +419,7 @@ class Fish {
       const sx = (tmpV2.x * 0.5 + 0.5) * w.width;
       const sy = (-tmpV2.y * 0.5 + 0.5) * w.height;
       if (this.tag) {
-        this.tag.style.display = visible && show && w.showTags && (this.isMe || this.data.highlight) ? '' : 'none';
+        this.tag.style.display = visible && show && w.showTags && !w.skyView && (this.isMe || this.data.highlight) ? '' : 'none';
         this.tag.style.left = `${sx}px`;
         this.tag.style.top = `${sy}px`;
       }
@@ -1926,6 +1926,13 @@ export class World {
 
   // 카메라 연출: 물고기를 따라 폭포를 오르고 → 등용문을 크게 → 하늘의 별까지 → 원래 자리로
   startDirector(fish, onEnd) {
+    if (this.skyView) {
+      // 하늘 보기 중이면 원래 자리를 기준으로 연출
+      this.camera.position.copy(this.skyView.saved.pos);
+      this.controls.target.copy(this.skyView.saved.target);
+      this.skyView = null;
+      this.onSkyChange?.(false);
+    }
     this.director = {
       fish,
       onEnd,
@@ -2012,7 +2019,8 @@ export class World {
     const key = star.id || `${star.name}|${star.at}`;
     const h1 = hashStr(`${key}|a`);
     const h2 = hashStr(`${key}|b`);
-    return new THREE.Vector3((h1 - 0.5) * 90, 22 + h2 * 38, -70 - h1 * 20);
+    // 아래쪽에 더 많이 모이게: 연못 화면 위쪽 하늘에도 보이고, 하늘 보기를 하면 높이까지 펼쳐짐
+    return new THREE.Vector3((h1 - 0.5) * 100, 15 + Math.pow(h2, 1.6) * 42, -72 - h1 * 18);
   }
 
   addStar(star, { flash = false } = {}) {
@@ -2037,6 +2045,66 @@ export class World {
     );
     core.scale.setScalar(0.35);
     s.add(core);
+  }
+
+  pickStarAt(cx, cy, radius = 26) {
+    let best = null;
+    let bestD = radius;
+    for (const s of this.dreamStars.children) {
+      tmpV2.copy(s.position).project(this.camera);
+      if (tmpV2.z > 1) continue;
+      const sx = (tmpV2.x * 0.5 + 0.5) * this.width;
+      const sy = (-tmpV2.y * 0.5 + 0.5) * this.height;
+      const d = Math.hypot(sx - cx, sy - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  // ---------- 하늘 보기: 카메라가 하늘을 올려다봄 (focus 가 있으면 그 별로) ----------
+  setSkyView(on, focus = null) {
+    if (on) {
+      if (!this.skyView) {
+        this.skyView = { saved: { pos: this.camera.position.clone(), target: this.controls.target.clone() }, look: this.controls.target.clone() };
+        this.controls.enabled = false;
+      }
+      this.skyView.focus = focus ? focus.clone() : null;
+      if (focus) {
+        const s = this.dreamStars.children.find((x) => x.position.distanceToSquared(focus) < 0.01);
+        if (s) s.userData.base = 14; // 반짝
+        this.ringPulse(focus, 0xffe2a0, 10);
+      }
+    } else if (this.skyView) {
+      this.skyView.returning = true;
+      this.skyView.t = 0;
+    }
+    this.onSkyChange?.(on);
+  }
+
+  updateSkyView(dt) {
+    const v = this.skyView;
+    if (v.returning) {
+      v.t += dt;
+      this.camera.position.lerp(v.saved.pos, 1 - Math.exp(-dt * 3));
+      v.look.lerp(v.saved.target, 1 - Math.exp(-dt * 3));
+      this.camera.lookAt(v.look);
+      if (v.t > 1.2) {
+        this.camera.position.copy(v.saved.pos);
+        this.controls.target.copy(v.saved.target);
+        this.controls.enabled = true;
+        this.skyView = null;
+      }
+      return;
+    }
+    const target = v.focus || new THREE.Vector3(0, 34, -80);
+    // 연못 앞쪽 낮은 곳에서 하늘을 올려다봄
+    const pos = new THREE.Vector3(target.x * 0.12, 4.5, 15);
+    this.camera.position.lerp(pos, 1 - Math.exp(-dt * 2.2));
+    v.look.lerp(target, 1 - Math.exp(-dt * 2.6));
+    this.camera.lookAt(v.look);
   }
 
   hasStar(id) {
@@ -2369,6 +2437,11 @@ export class World {
   updateCamera(dt) {
     const v = this.view;
     const c = this.controls;
+    if (this.skyView && !this.director) {
+      this.updateSkyView(dt);
+      this.updateUnderwater();
+      return;
+    }
     if (this.director) {
       this.updateDirector(dt);
       this.updateUnderwater();
@@ -2446,11 +2519,13 @@ export class World {
 
       // 하늘의 별 → 별이 된 소원 보기
       if (!f && this.onStarClick) {
-        const sh = ray.intersectObjects(this.dreamStars.children, false);
-        if (sh[0]) {
-          this.ringPulse(sh[0].object.position, 0xffffff, 6);
-          return this.onStarClick(sh[0].object.userData.star);
+        // 별은 작고 멀어서 화면에서 가장 가까운 별을 찾음 (손가락으로도 잘 눌리게)
+        const s = this.pickStarAt(e.clientX, e.clientY, this.skyView ? 40 : 26);
+        if (s) {
+          this.ringPulse(s.position, 0xffffff, 6);
+          return this.onStarClick(s.userData.star);
         }
+        if (this.skyView) return this.onFishClick?.(null); // 하늘 보기 중엔 물고기를 움직이지 않음
       }
 
       // 빈 물(또는 연못 친구 물고기)을 눌렀을 때: 내 물고기가 있으면 그 자리로 헤엄쳐 감
