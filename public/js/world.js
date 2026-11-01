@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SPECIES, SPECIES_IDS, MOVES } from './data.js';
 
 // ---------- 연못 치수 ----------
@@ -1310,22 +1311,147 @@ export class World {
   }
 
   buildDecor() {
-    // 수초
+    // ---------- 수초: 물결에 하늘거리는 리본 잎 ----------
     this.weeds = [];
-    const weedM = new THREE.MeshStandardMaterial({ color: 0x2f7a4f, roughness: 0.8, side: THREE.DoubleSide });
-    for (let i = 0; i < 26; i++) {
-      const p = randomPondPoint(1.2);
+    this.weedTime = { value: 0 }; // 모든 수초가 같은 시간 값을 공유
+    const PALETTES = [
+      { base: 0x123d27, tip: 0x5fb36a, w: 5 }, // 초록 말
+      { base: 0x1d3f1a, tip: 0x9cc25a, w: 3 }, // 연두 올리브
+      { base: 0x16392f, tip: 0x4fae94, w: 2 }, // 청록
+      { base: 0x3a1a1c, tip: 0xc4645a, w: 1 }, // 가끔 붉은 해초
+    ];
+    const pickPalette = () => {
+      let r = Math.random() * PALETTES.reduce((a, p) => a + p.w, 0);
+      for (const p of PALETTES) if ((r -= p.w) < 0) return p;
+      return PALETTES[0];
+    };
+    const cBase = new THREE.Color();
+    const cTip = new THREE.Color();
+    const cTmp = new THREE.Color();
+
+    // 잎 한 장: 아래는 넓고 위로 갈수록 가늘어지며, 살짝 휘고 비틀린 리본
+    const makeBlade = (height, width, pal) => {
+      const g = new THREE.PlaneGeometry(width, height, 1, 12);
+      const pos = g.attributes.position;
+      const n = pos.count;
+      const aH = new Float32Array(n);
+      const col = new Float32Array(n * 3);
+      const curve = rand(-0.35, 0.35);
+      const twist = rand(-1.2, 1.2);
+      cBase.set(pal.base);
+      cTip.set(pal.tip);
+      for (let i = 0; i < n; i++) {
+        const t = clamp((pos.getY(i) + height / 2) / height, 0, 1); // 0 = 뿌리, 1 = 끝 (반올림 오차로 음수 → NaN 방지)
+        let x = pos.getX(i) * (1 - Math.pow(t, 1.4) * 0.9);
+        let z = t * t * curve * height * 0.4;
+        // 비틀림
+        const a = t * twist;
+        const xr = x * Math.cos(a) - z * Math.sin(a);
+        const zr = x * Math.sin(a) + z * Math.cos(a);
+        pos.setXYZ(i, xr, t * height, zr);
+        aH[i] = t;
+        cTmp.copy(cBase).lerp(cTip, Math.pow(t, 0.8));
+        col.set([cTmp.r, cTmp.g, cTmp.b], i * 3);
+      }
+      g.setAttribute('aH', new THREE.BufferAttribute(aH, 1));
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      g.computeVertexNormals();
+      return g;
+    };
+
+    // 꼭대기로 갈수록 크게 흔들리고, 물고기에 밀리면 그쪽으로 휘는 셰이더
+    const makeWeedMaterial = (u) => {
+      const m = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.65 });
+      m.onBeforeCompile = (sh) => {
+        sh.uniforms.uTime = this.weedTime;
+        sh.uniforms.uPush = u.uPush;
+        sh.uniforms.uPhase = u.uPhase;
+        sh.vertexShader = sh.vertexShader
+          .replace(
+            '#include <common>',
+            '#include <common>\nattribute float aH;\nuniform float uTime;\nuniform vec2 uPush;\nuniform float uPhase;',
+          )
+          .replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+            float k = aH * aH;
+            vec2 sway = vec2(
+              sin(uTime * 1.1 + uPhase + transformed.y * 1.6) * 0.22 + sin(uTime * 2.3 + uPhase * 2.0) * 0.05,
+              cos(uTime * 0.8 + uPhase * 1.3 + transformed.y * 1.2) * 0.16
+            );
+            vec2 b = (sway + uPush * 1.5) * k * (0.6 + transformed.y * 0.35);
+            transformed.xz += b;
+            transformed.y -= dot(b, b) * 0.22 * aH;`,
+          );
+      };
+      m.customProgramCacheKey = () => 'pond-weed';
+      return m;
+    };
+
+    for (let i = 0; i < 30; i++) {
+      const p = randomPondPoint(1.3);
       if (p.z < -5 && Math.abs(p.x) < 4) continue;
-      const h = rand(1.2, 2.6);
-      const g = new THREE.ConeGeometry(0.12, h, 5, 6, true);
-      g.translate(0, h / 2, 0);
-      const weed = new THREE.Mesh(g, weedM);
       const base = floorHeight(p.x, p.z);
+      // 잎 끝이 수면 아래에 머물도록
+      const maxH = Math.max(0.6, -0.4 - base);
+      const pal = pickPalette();
+      const blades = [];
+      const count = Math.floor(rand(5, 10));
+      let tallest = 0;
+      for (let k = 0; k < count; k++) {
+        const h = Math.min(maxH, rand(0.9, 2.6)) * rand(0.7, 1);
+        tallest = Math.max(tallest, h);
+        const g = makeBlade(h, rand(0.09, 0.17), pal);
+        g.rotateY(rand(0, Math.PI * 2));
+        g.translate(rand(-0.22, 0.22), 0, rand(-0.22, 0.22));
+        blades.push(g);
+      }
+      const geom = mergeGeometries(blades);
+      blades.forEach((g) => g.dispose());
+      const u = { uPush: { value: new THREE.Vector2() }, uPhase: { value: rand(0, 6.28) } };
+      const weed = new THREE.Mesh(geom, makeWeedMaterial(u));
       weed.position.set(p.x, base - 0.05, p.z);
-      weed.userData.ph = rand(0, 6);
+      weed.frustumCulled = false; // 셰이더로 흔들리므로
       this.scene.add(weed);
-      this.weeds.push({ mesh: weed, x: p.x, z: p.z, base, h, bx: 0, bz: 0 });
+      this.weeds.push({ mesh: weed, x: p.x, z: p.z, base, h: tallest, bx: 0, bz: 0, u });
     }
+
+    // ---------- 바닥 소품: 마리모와 조약돌 ----------
+    const marimoG = new THREE.IcosahedronGeometry(1, 2);
+    const mp = marimoG.attributes.position;
+    for (let i = 0; i < mp.count; i++) {
+      const v = tmpV.fromBufferAttribute(mp, i);
+      v.multiplyScalar(1 + (Math.sin(v.x * 9) * Math.cos(v.y * 11) * Math.sin(v.z * 7)) * 0.08);
+      mp.setXYZ(i, v.x, v.y, v.z);
+    }
+    marimoG.computeVertexNormals();
+    const marimoM = new THREE.MeshStandardMaterial({ color: 0x3f8f3c, roughness: 1, flatShading: true });
+    for (let i = 0; i < 9; i++) {
+      const p = randomPondPoint(1.6);
+      const r = rand(0.14, 0.28);
+      const m = new THREE.Mesh(marimoG, marimoM);
+      m.scale.setScalar(r);
+      m.position.set(p.x, floorHeight(p.x, p.z) + r * 0.8, p.z);
+      m.rotation.set(rand(0, 3), rand(0, 3), 0);
+      this.scene.add(m);
+    }
+
+    const pebbleG = new THREE.IcosahedronGeometry(1, 1);
+    const pebbleM = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
+    const PEBBLES = 70;
+    const pebbles = new THREE.InstancedMesh(pebbleG, pebbleM, PEBBLES);
+    const pm = new THREE.Matrix4();
+    const pq = new THREE.Quaternion();
+    const pebbleColors = [0x8a8172, 0x6f7a7d, 0xa39882, 0x5d6660, 0xb5a98f];
+    for (let i = 0; i < PEBBLES; i++) {
+      const p = randomPondPoint(0.9);
+      const s = rand(0.06, 0.2);
+      pq.setFromEuler(new THREE.Euler(0, rand(0, 6), 0));
+      pm.compose(new THREE.Vector3(p.x, floorHeight(p.x, p.z) + s * 0.25, p.z), pq, new THREE.Vector3(s * rand(1, 1.6), s * 0.55, s));
+      pebbles.setMatrixAt(i, pm);
+      pebbles.setColorAt(i, cTmp.set(pebbleColors[i % pebbleColors.length]));
+    }
+    this.scene.add(pebbles);
 
     // 연잎·연꽃
     const padM = new THREE.MeshStandardMaterial({ color: 0x3f8a4a, roughness: 0.7, side: THREE.DoubleSide });
@@ -1715,6 +1841,7 @@ export class World {
 
   // 수초는 물고기에 밀려 휘었다가 돌아오고, 연잎은 밀려나며 들썩인다
   pushPlants(dt, time) {
+    this.weedTime.value = time;
     const fishes = [...this.fishes.values()].filter((f) => !f.action || f.action.type === 'leap');
     for (const w of this.weeds) {
       let tx = 0;
@@ -1736,9 +1863,7 @@ export class World {
       const rate = Math.min(1, dt * (pushing ? 8 : 2.2));
       w.bx += (clamp(tx, -0.9, 0.9) - w.bx) * rate;
       w.bz += (clamp(tz, -0.9, 0.9) - w.bz) * rate;
-      const ph = w.mesh.userData.ph;
-      w.mesh.rotation.z = -w.bx + Math.sin(time * 0.9 + ph) * 0.12;
-      w.mesh.rotation.x = w.bz + Math.cos(time * 0.7 + ph) * 0.08;
+      w.u.uPush.value.set(w.bx, w.bz); // 흔들림은 셰이더가, 밀림 방향만 넘겨 줌
     }
     for (const [i, p] of this.pads.entries()) {
       const u = p.userData;
