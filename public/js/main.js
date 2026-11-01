@@ -242,6 +242,7 @@ async function main() {
   let cardId = null;
   function openCard(w) {
     if (!w) return;
+    if (mobile()) openPanel(false); // 휴대폰: 카드와 패널이 겹치지 않게 하나만
     cardId = w.id;
     const star = w.status === 'star';
     $('wishCard').hidden = false;
@@ -284,7 +285,6 @@ async function main() {
     const w = wishes.get(f.id);
     if (!w) return;
     sfx.bubble();
-    if (w.mine && mobile()) openPanel(true);
     openCard(w);
   };
   world.onStarClick = (star) => {
@@ -543,8 +543,10 @@ async function main() {
     if (e.code === 'Space') holdEnd();
   });
 
+  let creatingWish = false;
   async function releaseWish() {
     ritualStep(3);
+    creatingWish = true;
     try {
       const { wish } = await api('/api/wishes', {
         text: ritual.text,
@@ -553,6 +555,8 @@ async function main() {
         name: state.name,
       });
       myWish = wish;
+      wishes.set(wish.id, wish);
+      creatingWish = false;
       state.seen[wish.id] = 0;
       save();
       stats.total++;
@@ -564,6 +568,7 @@ async function main() {
         const av = world.getFish(AVATAR);
         const at = av ? av.pos.clone() : null;
         renderPanel();
+        if (mobile()) openPanel(false); // 휴대폰: 놓아준 뒤엔 연못이 보이게
         const f = putFish(wish, { splash: !at });
         if (f && at) {
           f.pos.copy(at);
@@ -576,6 +581,7 @@ async function main() {
         setTimeout(() => toast('🔗 링크를 보내면 친구가 내 소원에 먹이를 줄 수 있어요'), 5000);
       }, 500);
     } catch (e) {
+      creatingWish = false;
       closeRitual();
       if (e.code === 'already_swimming') {
         toast('이미 헤엄치는 소원이 있어요. 별이 되면 새 소원을 띄울 수 있어요');
@@ -760,6 +766,7 @@ async function main() {
 
   // ---------- 모바일 패널 ----------
   function openPanel(open) {
+    if (open && mobile()) closeCard();
     $('panel').classList.toggle('collapsed', !open);
     document.body.classList.toggle('panel-open', open && mobile());
   }
@@ -777,6 +784,11 @@ async function main() {
   });
   live.on('wish:new', ({ wish }) => {
     if (wishes.has(wish.id)) return;
+    if (creatingWish) {
+      // 내가 방금 만든 소원일 수 있으니 응답을 기다렸다가 다시 확인
+      setTimeout(() => !wishes.has(wish.id) && live.dispatchEvent(new CustomEvent('wish:new', { detail: { wish } })), 1500);
+      return;
+    }
     stats.total++;
     renderStats();
     const swimming = [...world.fishes.values()].filter((f) => !f.isNpc).length;
@@ -822,7 +834,7 @@ async function main() {
     if (document.hidden || document.body.classList.contains('cinema')) return;
     const cands = [...world.fishes.values()].filter((f) => {
       const w = wishes.get(f.id);
-      return w && w.text && !f.action && !f.move && f.id !== lastSurfaced;
+      return w && w.text && !f.action && !f.move && !f.manual && f.id !== lastSurfaced;
     });
     if (!cands.length) return;
     const f = cands[Math.floor(Math.random() * cands.length)];

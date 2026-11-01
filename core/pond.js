@@ -228,7 +228,8 @@ export class Pond {
       if (!text) return json(400, { error: 'empty' });
       const bad = checkText(text);
       if (bad) return json(400, { error: bad });
-      if (this.limited(`w:${ip}`, 6, 3600 * 1000)) return json(429, { error: 'too_many' });
+      // 기기(브라우저)마다 한 시간 6번, 같은 와이파이·통신사를 여럿이 쓰는 경우를 위해 주소는 넉넉히 60번
+      if (this.limited(`w:${owner}`, 6, 3600 * 1000) || this.limited(`wi:${ip}`, 60, 3600 * 1000)) return json(429, { error: 'too_many' });
       if (this.wishes.some((w) => w.owner === owner && w.status === 'swimming')) return json(409, { error: 'already_swimming' });
       /** @type {Wish} */
       const w = {
@@ -265,7 +266,7 @@ export class Pond {
       if (w.status !== 'swimming') return json(409, { error: 'already_star' });
       const now = Date.now();
       if (now - (this.lastFeed.get(who) || 0) < FEED_GAP_MS) return json(429, { error: 'too_fast' });
-      if (this.limited(`f:${ip}`, 120, 3600 * 1000)) return json(429, { error: 'too_many' });
+      if (this.limited(`f:${who}`, 300, 3600 * 1000) || this.limited(`fi:${ip}`, 2000, 3600 * 1000)) return json(429, { error: 'too_many' });
       this.lastFeed.set(who, now);
       if (this.lastFeed.size > 20000) this.lastFeed.clear();
       w.fedBy[who] = (Number(w.fedBy[who]) || 0) + 1; // 누가 몇 번 줬나 (응원한 사람 수 세기용)
@@ -306,7 +307,7 @@ export class Pond {
       if (!w || w.hidden) return json(404, { error: 'not_found' });
       if (w.owner === who) return json(403, { error: 'own_wish' });
       if (w.reportedBy[who]) return json(200, { ok: true, already: true });
-      if (this.limited(`r:${ip}`, 20, 3600 * 1000)) return json(429, { error: 'too_many' });
+      if (this.limited(`r:${who}`, 20, 3600 * 1000) || this.limited(`ri:${ip}`, 200, 3600 * 1000)) return json(429, { error: 'too_many' });
       w.reportedBy[who] = Date.now();
       w.reports++;
       if (w.reports >= REPORT_HIDE && !w.hidden) {

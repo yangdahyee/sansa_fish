@@ -458,3 +458,17 @@ body.in-ritual #labels { opacity: 0; }
   #btnSky span { display: none; }
   #btnSky { width: 40px; padding: 8px 0; }
 }
+
+/* 휴대폰: 소원 성취 화면이 좁아도 한 줄로 */
+.celebrate .cele-orn { white-space: nowrap; }
+@media (max-width: 720px) {
+  .celebrate { padding: 0 20px; }
+  .celebrate .cele-orn { letter-spacing: .18em; font-size: 12px; gap: 8px; padding-left: .18em; }
+  .celebrate .cele-orn::before, .celebrate .cele-orn::after { width: 28px; }
+  .celebrate .big { font-size: 20px; }
+  .celebrate .cele-dream { font-size: 26px; margin-top: 12px; }
+  .celebrate .cele-meta { font-size: 13px; }
+  .celebrate { background: radial-gradient(ellipse 90% 40% at 50% 50%, rgba(5, 10, 24, .7), transparent 75%); }
+}
+
+body.cinema .wish-bubble { opacity: 0 !important; }

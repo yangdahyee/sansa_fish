@@ -183,15 +183,7 @@ class Fish {
     this.root.add(this.hit);
 
     // 내 물고기 표시용 고리
-    if (isMe) {
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.85, 0.035, 8, 48),
-        new THREE.MeshBasicMaterial({ color: 0xffcf6b, transparent: true, opacity: 0.85 }),
-      );
-      ring.rotation.x = Math.PI / 2;
-      this.ring = ring;
-      this.root.add(ring);
-    }
+    if (isMe) this.makeMine();
 
     this.buildModel(data.species);
     this.root.position.copy(this.pos);
@@ -235,6 +227,22 @@ class Fish {
       a.play();
     }
     this.species = species;
+  }
+
+  // 나중에 '내 물고기'로 바뀌어도 고리·이름표가 붙도록
+  makeMine() {
+    this.isMe = true;
+    if (!this.ring) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.85, 0.035, 8, 48),
+        new THREE.MeshBasicMaterial({ color: 0xffcf6b, transparent: true, opacity: 0.85 }),
+      );
+      ring.rotation.x = Math.PI / 2;
+      this.ring = ring;
+      this.root.add(ring);
+    }
+    if (this.tag) this.tag.className = 'tag me';
+    this.updateTag?.();
   }
 
   setData(d) {
@@ -323,7 +331,7 @@ class Fish {
   // ---------- 행동 ----------
   // 수면으로 올라가 소원을 띄우기
   surface(text) {
-    if (this.action) return false;
+    if (this.action || this.manual) return false; // 내가 보낸 곳으로 가는 중이면 방해하지 않음
     this.doMove('nibble');
     if (this.move) this.move.dur = 5.5;
     this.surfaceText = text;
@@ -480,7 +488,7 @@ class Fish {
         break;
     }
     this.move = m;
-    if (this.isMe) this.manual = null;
+    // (예전엔 여기서 내 목적지를 지워서, 수면 띄우기가 돌 때마다 이동이 취소됐음)
   }
 
   // 동작별로 원하는 속도 벡터를 out 에 쓰고, 기울기·애니메이션 속도를 정한다
@@ -2124,6 +2132,7 @@ export class World {
       return null;
     }
     if (f) {
+      if (opts.isMe && !f.isMe) f.makeMine();
       f.setData(data);
     } else {
       f = new Fish(this, data, opts);
