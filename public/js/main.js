@@ -50,6 +50,7 @@ function celebrate(title, sub) {
   b.className = 'small';
   b.textContent = sub;
   box.append(a, b);
+  box.classList.remove('out');
   box.hidden = false;
   for (let i = 0; i < 40; i++) {
     const p = document.createElement('div');
@@ -62,7 +63,18 @@ function celebrate(title, sub) {
     setTimeout(() => p.remove(), 8000);
   }
   clearTimeout(celebrate.t);
-  celebrate.t = setTimeout(() => (box.hidden = true), 4500);
+  celebrate.t = setTimeout(() => box.classList.add('out'), 4600);
+  clearTimeout(celebrate.t2);
+  celebrate.t2 = setTimeout(() => (box.hidden = true), 5400);
+}
+
+// 화면 아래 자막
+function caption(text, ms = 4000) {
+  const el = $('caption');
+  el.textContent = text;
+  el.classList.add('on');
+  clearTimeout(caption.t);
+  caption.t = setTimeout(() => el.classList.remove('on'), ms);
 }
 
 // ---------- 내 물고기 데이터 ----------
@@ -94,6 +106,16 @@ async function main() {
     $('loading').querySelector('p').textContent = `물고기를 부르는 중… ${Math.round(p * 100)}%`;
   });
   $('loading').classList.add('done');
+
+  // 엔딩(등용) 장면: 패널·버튼을 숨기고 장면을 화면 정중앙으로
+  let cinemaTimer = null;
+  function cinema(on, { maxMs = 40000 } = {}) {
+    document.body.classList.toggle('cinema', on);
+    world.setCinema(on);
+    clearTimeout(cinemaTimer);
+    if (on) cinemaTimer = setTimeout(() => cinema(false), maxMs); // 혹시 끝나지 않아도 풀리게
+  }
+  const typing = () => /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName);
 
   const net = new PondNet(pond);
   const others = new Map(); // netId → 공개 정보
@@ -196,12 +218,19 @@ async function main() {
     const { from, star } = e.detail;
     if (from === net.id) return; // 내 등용은 직접 처리
     const f = world.getFish(from);
+    // 내가 무언가 입력하던 중이면 화면을 가리지 않는다
+    const cine = !typing();
     const done = () => {
       world.removeFish(from);
       world.addStar(star, { flash: true });
       world.refreshMarkers();
+      celebrate(`${star.name} 님의 꿈이 용이 되었어요`, star.dream ? `“${star.dream}”` : '연못 하늘에 별이 하나 늘었어요');
+      if (cine) setTimeout(() => cinema(false), 5600);
     };
-    celebrate(`${star.name} 님의 꿈이 용이 되었어요`, star.dream ? `“${star.dream}”` : '연못 하늘에 별이 하나 늘었어요');
+    if (cine) {
+      cinema(true);
+      caption(`${star.name} 님의 물고기가 폭포를 거슬러 오릅니다…`);
+    } else toast(`${star.name} 님의 물고기가 폭포를 오르고 있어요`, 'gold');
     sfx.ascend();
     if (world.view.fishId === from) world.setView('pond');
     if (f) f.ascend(done);
@@ -437,7 +466,8 @@ async function main() {
       net.send({ t: 'ascend' });
       sfx.ascend();
       buzz([40, 80, 40, 80, 120]);
-      toast('물고기가 폭포를 거슬러 오릅니다…', 'gold');
+      cinema(true);
+      caption('물고기가 폭포를 거슬러 오릅니다…');
       const finish = () => {
         const star = { name: state.name, dream: d.isPublic ? d.text : '', species: d.species, at: Date.now() };
         state.stars.push({ text: d.text, species: d.species, at: star.at, offline: !net.online, name: star.name, dream: star.dream });
@@ -447,6 +477,7 @@ async function main() {
         world.addStar(star, { flash: true });
         world.refreshMarkers();
         celebrate('등용! 꿈이 용이 되었어요', `“${d.text}”`);
+        setTimeout(() => cinema(false), 5600);
         net.send({ t: 'update', fish: net.getFish() });
         renderPanel();
         ascending = false;

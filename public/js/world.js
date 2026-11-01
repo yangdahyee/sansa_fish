@@ -912,6 +912,7 @@ export class World {
     this.showTags = true;
     this.timeScale = 1;
     this.viewShift = 0; // 오른쪽 패널만큼 화면 중심을 왼쪽으로
+    this.cinema = false;
     this.onFishClick = null;
     this.sfx = null;
     this.timer = new THREE.Timer();
@@ -2054,7 +2055,20 @@ export class World {
     // 세로 화면에서는 조금 더 멀리
     this.camera.fov = this.camera.aspect < 0.8 ? 62 : 48;
     // 데스크톱에서는 오른쪽 패널에 가리지 않게 장면을 왼쪽으로 조금 민다
-    this.viewShift = this.width > 720 ? 180 : 0;
+    this.applyViewShift(true);
+  }
+
+  // 엔딩 장면에서는 패널이 사라지므로 장면을 다시 화면 정중앙으로 (부드럽게)
+  setCinema(on) {
+    this.cinema = on;
+  }
+
+  applyViewShift(snap = false, dt = 0) {
+    const target = !this.cinema && this.width > 720 ? 180 : 0;
+    const prev = this.viewShift;
+    this.viewShift = snap ? target : this.viewShift + (target - this.viewShift) * Math.min(1, dt * 3);
+    if (Math.abs(this.viewShift - target) < 0.5) this.viewShift = target;
+    if (!snap && prev === this.viewShift) return;
     if (this.viewShift) this.camera.setViewOffset(this.width, this.height, this.viewShift, 0, this.width, this.height);
     else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
@@ -2071,6 +2085,7 @@ export class World {
 
     this.resolveCollisions(dt, time);
     this.pushPlants(dt, time);
+    this.applyViewShift(false, dt);
     this.updateCamera(dt);
     this.updateMarker(dt);
 

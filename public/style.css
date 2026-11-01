@@ -193,10 +193,40 @@ body.underwater::after {
 
 /* ---------- 등용 축하 ---------- */
 .celebrate {
-  position: fixed; inset: 0; display: grid; place-content: center; text-align: center; z-index: 30; pointer-events: none;
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; z-index: 30; pointer-events: none; padding: 0 8vw;
+  /* 뒤에 빛이 지나가도 글씨가 잘 읽히게 가운데만 살짝 어둡게 */
+  background: radial-gradient(ellipse 60% 28% at 50% 50%, rgba(5, 12, 28, .55), transparent 70%);
+  transition: opacity .8s;
 }
-.celebrate .big { font-size: clamp(28px, 6vw, 56px); font-weight: 800; color: var(--gold); text-shadow: 0 0 30px rgba(255, 200, 100, .7); animation: pop .6s ease-out; }
-.celebrate .small { margin-top: 8px; color: var(--ink); font-size: 16px; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+.celebrate .big {
+  font-size: clamp(28px, 6vw, 56px); font-weight: 800; color: var(--gold); line-height: 1.25; word-break: keep-all;
+  text-shadow: 0 0 30px rgba(255, 200, 100, .7); animation: cine-in 1s cubic-bezier(.2, .9, .2, 1) both;
+}
+.celebrate .small {
+  margin-top: 14px; color: var(--ink); font-size: clamp(15px, 2.2vw, 20px); line-height: 1.5; max-width: 34em; word-break: keep-all;
+  text-shadow: 0 2px 10px rgba(0,0,0,.6); animation: cine-in 1s .35s cubic-bezier(.2, .9, .2, 1) both;
+}
+.celebrate.out { opacity: 0; }
+@keyframes cine-in { from { opacity: 0; transform: translateY(14px) scale(.96); letter-spacing: .04em; } }
+
+/* 화면 아래쪽 자막 */
+.caption {
+  position: fixed; left: 0; right: 0; bottom: 14vh; text-align: center; z-index: 30; pointer-events: none;
+  font-size: clamp(15px, 2vw, 19px); color: #fff3d6; text-shadow: 0 2px 12px rgba(0,0,0,.7); letter-spacing: .02em;
+  opacity: 0; transition: opacity .8s;
+}
+.caption.on { opacity: 1; }
+
+/* ---------- 엔딩(등용) 장면: 화면 정리 + 위아래 검은 띠 ---------- */
+.panel, .bottom-bars, .fish-card, .top-actions, .toasts, #labels, .brand { transition: opacity .6s; }
+body.cinema .panel, body.cinema .bottom-bars, body.cinema .fish-card, body.cinema .top-actions,
+body.cinema .toasts, body.cinema #labels, body.cinema .brand { opacity: 0; pointer-events: none; }
+.letterbox { position: fixed; left: 0; right: 0; height: 0; background: #000; z-index: 25; pointer-events: none; transition: height .9s cubic-bezier(.4, 0, .2, 1); }
+.letterbox.top { top: 0; }
+.letterbox.bottom { bottom: 0; }
+body.cinema .letterbox { height: 9vh; }
+
 .petal { position: fixed; top: -20px; font-size: 18px; animation: fall linear forwards; pointer-events: none; z-index: 29; }
 @keyframes fall { to { transform: translateY(110vh) rotate(540deg); opacity: .2; } }
 
