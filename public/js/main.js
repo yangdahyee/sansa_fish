@@ -187,6 +187,7 @@ async function main() {
     f?.say(PHRASES[e.detail.i] || '');
     sfx.bubble();
   });
+  net.addEventListener('goto', (e) => world.swimFishTo(e.detail.from, e.detail.p));
   net.addEventListener('act', (e) => {
     const m = MOVES[e.detail.i];
     if (m) world.getFish(e.detail.from)?.doMove(m.id);
@@ -202,6 +203,7 @@ async function main() {
     };
     celebrate(`${star.name} 님의 꿈이 용이 되었어요`, star.dream ? `“${star.dream}”` : '연못 하늘에 별이 하나 늘었어요');
     sfx.ascend();
+    if (world.view.fishId === from) world.setView('pond');
     if (f) f.ascend(done);
     else done();
   });
@@ -380,6 +382,7 @@ async function main() {
     sfx.splash();
     buzz(30);
     toast('꿈이 물고기가 되어 연못으로 들어갔어요 🌊', 'gold');
+    setTimeout(() => toast('💡 연못을 누르면 내 물고기가 그곳으로 헤엄쳐요'), 1800);
   };
 
   // ---------- 할 일 ----------
@@ -429,6 +432,8 @@ async function main() {
     setTimeout(() => {
       const d = state.dream;
       const fish = world.getFish(ME);
+      // 화면 앞을 스쳐 가는 장면이 보이도록 연못 전체 시점으로
+      world.setView('pond');
       net.send({ t: 'ascend' });
       sfx.ascend();
       buzz([40, 80, 40, 80, 120]);
@@ -570,7 +575,12 @@ async function main() {
     if (mobile()) openPanel(false);
     closeCard();
   };
-  world.onSwimTo = () => sfx.bubble();
+  world.onSwimTo = (p) => {
+    sfx.bubble();
+    buzz(8);
+    // 다른 사람 화면에서도 내 물고기가 같은 곳으로 가게
+    net.send({ t: 'goto', p: [p.x, p.y, p.z].map((v) => Math.round(v * 100) / 100) });
+  };
 
   // ---------- 물방울 말 ----------
   PHRASES.forEach((p, i) => {

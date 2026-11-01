@@ -15,7 +15,9 @@ const FISH_LEN = 1.25; // 기본 몸 길이
 const TIERS = 7; // 폭포 단 수 (진행도와 별개로 시각적인 단)
 const TIER_H = 1.05;
 const FALLS_Z = -8.6;
-const NPC_TARGET = 6; // 연못이 너무 비어 보이지 않게 채우는 '연못 친구' 수
+const NPC_TARGET = 6;
+const GATE_Z = FALLS_Z - TIERS * 0.75 - 1.4; // 꼭대기 단 위, 홍살문이 서는 자리
+const GATE_BASE_Y = TIERS * TIER_H + 0.05; // 꼭대기 단 윗면 높이 // 연못이 너무 비어 보이지 않게 채우는 '연못 친구' 수
 
 const MOVE_IDS = MOVES.map((m) => m.id);
 // 스스로 고를 때의 동작 비율
@@ -112,8 +114,9 @@ const WALL_RZ = POND_RZ - 1;
 
 // 폭포 i번째 단의 물고기 위치(물이 넘치는 턱 바로 앞)
 function tierPoint(i, xOff = 0) {
-  const y = i * TIER_H + 0.25;
-  const z = FALLS_Z - i * 0.75 + 0.9;
+  // i번째 단의 윗면(작은 웅덩이) 위 — 예전에는 한 단 아래 허공에 떠 있었음
+  const y = i * TIER_H + 0.35;
+  const z = FALLS_Z - i * 0.75 - 0.25;
   return new THREE.Vector3(xOff, y, z);
 }
 
@@ -304,6 +307,18 @@ class Fish {
   }
 
   // ---------- 행동 ----------
+  // 정한 자리로 헤엄쳐 가기 (너무 오래 걸리면 포기)
+  swimTo(p) {
+    if (this.action) return false;
+    this.manual = p.clone();
+    this.manualTime = 0;
+    // 거리에 비례한 제한 시간 (느린 기기에서도 실제 '시뮬레이션 시간'으로 셈)
+    this.manualLimit = 4 + this.pos.distanceTo(p) * 1.2;
+    this.move = null;
+    this.data.sleeping = false;
+    return true;
+  }
+
   // 도약: 수면을 향해 차고 올라 → 공중에서는 중력만 → 물에 떨어지면 물의 저항으로 감속
   leap() {
     if (this.action) return;
@@ -617,7 +632,10 @@ class Fish {
         // 물을 톡 누른 곳으로
         this.target.copy(this.manual);
         speed = 2;
-        if (this.pos.distanceTo(this.manual) < 0.5) this.manual = null;
+        if (this.pos.distanceTo(this.manual) < 0.5) {
+          this.manual = null;
+          this.wiggle = Math.max(this.wiggle, 0.35); // 도착하면 살짝 꼬리 흔들기
+        } else if ((this.manualTime += dt) > this.manualLimit) this.manual = null;
       } else {
         this.sleepSpot = null;
         if (this.pos.distanceTo(this.target) < 1.2) {
@@ -818,7 +836,7 @@ class Fish {
         const t = Math.min(1, a.t);
         this.model.traverse((o) => {
           if (o.isMesh && o.material.emissive) {
-            o.material.emissive.setRGB(1, 0.72, 0.25).multiplyScalar(t * 0.9);
+            o.material.emissive.setRGB(1, 0.62, 0.12).multiplyScalar(t * 0.45); // 원래 색이 남도록 은은한 금빛
           }
         });
         this.root.rotation.y += dt * 6 * t;
@@ -832,18 +850,40 @@ class Fish {
         return;
       }
       if (a.phase === 'fly') {
-        // 용처럼 휘감으며 하늘로
-        a.t += dt / 4.5;
-        const t = Math.min(1, a.t);
+        // 홍살문을 지나 → 크게 돌아 화면 바로 앞을 스쳐 지나가고 → 하늘로 올라 별이 됨
+        if (!a.curve) {
+          const cam = w.camera;
+          const camPos = cam.position.clone();
+          const fwd = cam.getWorldDirection(new THREE.Vector3());
+          const right = new THREE.Vector3().crossVectors(fwd, UP).normalize();
+          const up = new THREE.Vector3().crossVectors(right, fwd).normalize();
+          const through = new THREE.Vector3(0, GATE_BASE_Y + 1.2, GATE_Z);
+          const behind = new THREE.Vector3(0, GATE_BASE_Y + 3.5, GATE_Z - 3);
+          const swoop = a.from.clone().lerp(camPos, 0.45).addScaledVector(UP, 4);
+          a.near = camPos.clone().addScaledVector(fwd, 4.6).addScaledVector(right, 1.3).addScaledVector(up, -0.4);
+          const past = camPos.clone().addScaledVector(fwd, 1.2).addScaledVector(right, -3.2).addScaledVector(up, 2.4);
+          const sky = new THREE.Vector3(a.from.x - 8, 42, -65);
+          a.curve = new THREE.CatmullRomCurve3([a.from.clone(), through, behind, swoop, a.near, past, sky], false, 'centripetal');
+          a.nearU = 4 / 6; // 화면 앞을 지나는 순간
+          a.u = 0;
+          a.passed = false;
+        }
+        // 화면 앞을 지날 때는 천천히 (눈을 맞추듯)
+        const slow = 1 - 0.65 * Math.exp(-(((a.u - a.nearU) / 0.06) ** 2));
+        a.u = Math.min(1, a.u + (dt / 7) * slow);
         const prev = this.pos.clone();
-        const ang = t * Math.PI * 3;
-        const r = 3 * (1 - t * 0.6);
-        this.pos.set(a.from.x + Math.sin(ang) * r, a.from.y + t * t * 26, a.from.z - t * 18 + Math.cos(ang) * r * 0.5);
+        a.curve.getPoint(a.u, this.pos);
         this.face(tmpV.subVectors(this.pos, prev).divideScalar(Math.max(dt, 1e-4)), dt, 10);
-        this.pivot.scale.multiplyScalar(1 + t * 0.6);
+        this.pivot.scale.multiplyScalar(1 + Math.min(a.u, 0.7) * 0.5);
+        this.wiggle = Math.max(this.wiggle, 0.2);
         w.pushTrail(a.trail, this.pos);
         if (Math.random() < 0.5) w.burst(this.pos, 0xffe2a0, 2, 0.5);
-        if (a.t >= 1) {
+        if (!a.passed && a.u > a.nearU) {
+          a.passed = true;
+          w.burst(this.pos, 0xffffff, 40, 1.2);
+          w.sfx?.chime();
+        }
+        if (a.u >= 1) {
           w.burst(this.pos, 0xffffff, 60, 2);
           w.fadeTrail(a.trail);
           const cb = a.onDone;
@@ -1140,27 +1180,32 @@ export class World {
     });
 
     const fallsGroup = new THREE.Group();
-    for (let i = 0; i < TIERS; i++) {
-      const w = 6.2 - i * 0.45;
+    for (let i = 0; i <= TIERS; i++) {
+      const top = i === TIERS; // 맨 위는 홍살문이 서는 넓은 단
+      const w = top ? 4.4 : 6.2 - i * 0.45;
       const y = i * TIER_H;
       const z = FALLS_Z - i * 0.75;
+      const depth = top ? 3.4 : 1.6;
       // 단(바위 턱)
-      const step = new THREE.Mesh(new THREE.BoxGeometry(w + 2.2, TIER_H, 1.6, 4, 2, 2), rockM);
+      const step = new THREE.Mesh(new THREE.BoxGeometry(w + 2.2, TIER_H, depth, 4, 2, 2), rockM);
       const sp = step.geometry.attributes.position;
       for (let k = 0; k < sp.count; k++) {
         sp.setXYZ(k, sp.getX(k) + rand(-0.12, 0.12), sp.getY(k) + rand(-0.08, 0.08), sp.getZ(k) + rand(-0.12, 0.12));
       }
       step.geometry.computeVertexNormals();
-      step.position.set(0, y - TIER_H / 2 + 0.05, z - 0.5);
+      // 윗면은 평평하게 두어야 문·물고기가 뜨지 않음 (옆면만 울퉁불퉁)
+      for (let k = 0; k < sp.count; k++) if (sp.getY(k) > TIER_H / 2 - 0.1) sp.setY(k, TIER_H / 2);
+      step.geometry.computeVertexNormals();
+      step.position.set(0, y - TIER_H / 2 + 0.05, z + 0.3 - depth / 2);
       fallsGroup.add(step);
       // 이끼
-      const moss = new THREE.Mesh(new THREE.BoxGeometry(w + 2.3, 0.12, 1.4), mossM);
-      moss.position.set(0, y + 0.08, z - 0.6);
+      const moss = new THREE.Mesh(new THREE.BoxGeometry(w + 2.3, 0.08, depth - 0.2), mossM);
+      moss.position.set(0, y + 0.07, z + 0.2 - depth / 2);
       fallsGroup.add(moss);
       // 작은 웅덩이 물
-      const pool = new THREE.Mesh(new THREE.PlaneGeometry(w, 1.2), this.waterMat);
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(top ? 2.6 : w, top ? depth - 0.4 : 1.2), this.waterMat);
       pool.rotation.x = -Math.PI / 2;
-      pool.position.set(0, y + 0.16, z - 0.3);
+      pool.position.set(0, y + 0.16, top ? z + 0.1 - (depth - 0.4) / 2 : z - 0.3);
       fallsGroup.add(pool);
       // 떨어지는 물줄기
       const fall = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.8, TIER_H + 0.15), this.fallsMat);
@@ -1203,7 +1248,6 @@ export class World {
     }
 
     // 꼭대기 문(등용문)
-    const top = tierPoint(TIERS, 0);
     const gateM = new THREE.MeshStandardMaterial({ color: 0xb8352c, roughness: 0.6 });
     const gate = new THREE.Group();
     for (const sx of [-1.7, 1.7]) {
@@ -1229,13 +1273,20 @@ export class World {
     const disc = new THREE.Mesh(new THREE.CircleGeometry(0.28, 24), new THREE.MeshBasicMaterial({ color: 0xffcf6b }));
     disc.position.set(0, 2.48, 0.1);
     gate.add(disc);
-    gate.position.set(0, top.y - 0.3, top.z - 0.9);
+    // 기둥 받침돌 — 문이 바닥에 단단히 서 있게
+    const baseM = new THREE.MeshStandardMaterial({ color: 0x6b6f75, roughness: 0.9, flatShading: true });
+    for (const sx of [-1.7, 1.7]) {
+      const stone = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.3, 0.55), baseM);
+      stone.position.set(sx, 0.15, 0);
+      gate.add(stone);
+    }
+    gate.position.set(0, GATE_BASE_Y, GATE_Z);
     fallsGroup.add(gate);
     const gateGlow = new THREE.Sprite(
       new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffc070, transparent: true, opacity: 0.5, depthWrite: false }),
     );
     gateGlow.scale.setScalar(7);
-    gateGlow.position.set(0, top.y + 1.5, top.z - 1);
+    gateGlow.position.set(0, GATE_BASE_Y + 2.2, GATE_Z - 0.2);
     fallsGroup.add(gateGlow);
     this.gateGlow = gateGlow;
 
@@ -1433,7 +1484,7 @@ export class World {
     const pts = new THREE.Points(
       g,
       new THREE.PointsMaterial({
-        size: 0.9,
+        size: 0.55,
         map: this.glowTex,
         color: 0xffd27a,
         transparent: true,
@@ -1862,38 +1913,137 @@ export class World {
       ray.setFromCamera(ndc, this.camera);
       const hits = ray.intersectObjects([...this.fishes.values()].map((f) => f.hit), false);
       const f = hits[0]?.object.userData.fish;
+
+      // 다른 사람 물고기 → 카드
+      if (f && !f.isNpc && !f.isMe) return this.onFishClick?.(f);
+      // 연못 전체 시점에서 내 물고기 → 내 꿈 패널
+      if (f?.isMe && this.view.mode === 'pond') return this.onFishClick?.(f);
+
+      // 빈 물(또는 연못 친구 물고기)을 눌렀을 때: 내 물고기가 있으면 그 자리로 헤엄쳐 감
       const focus = this.view.fishId && this.fishes.get(this.view.fishId);
-      if (!f || f === focus) {
-        // 내 물고기 시점일 때: 누른 곳으로 헤엄쳐 가기
-        if (focus?.isMe && this.view.mode !== 'pond' && !focus.action) {
-          const t = (focus.pos.y - ray.ray.origin.y) / ray.ray.direction.y;
-          if (t > 0 && Number.isFinite(t)) {
-            const p = ray.ray.at(t, new THREE.Vector3());
-            if (!insidePond(p.x, p.z, 1.2)) p.multiplyScalar(0.8);
-            if (insidePond(p.x, p.z, 1.0)) {
-              focus.manual = p;
-              focus.move = null;
-              this.burst(p, 0xbff3ff, 12, 0.3);
-              this.onSwimTo?.();
-            }
-          }
-          return;
-        }
-      }
-      if (f && !f.isNpc) this.onFishClick?.(f);
-      else if (!f) {
-        // 빈 물을 톡 치면 물결
-        const t = -ray.ray.origin.y / ray.ray.direction.y;
-        if (t > 0) {
-          const p = ray.ray.at(t, tmpV);
-          if (insidePond(p.x, p.z, 0.2)) {
-            this.addRipple(p.x, p.z, 0.7);
-            this.sfx?.bubble();
-          }
+      const mine =
+        this.view.mode === 'pond' ? [...this.fishes.values()].find((x) => x.isMe) : focus?.isMe ? focus : null;
+      if (mine && !mine.action) {
+        const p = this.pickSwimPoint(ray.ray, mine);
+        if (p && mine.swimTo(p)) {
+          this.showMarker(mine, p);
+          this.addRipple(p.x, p.z, 0.5);
+          this.onSwimTo?.(p);
         }
         this.onFishClick?.(null);
-      } else this.onFishClick?.(null);
+        return;
+      }
+      if (f?.isMe) return;
+
+      // 그 밖에는 물결만
+      const t = -ray.ray.origin.y / ray.ray.direction.y;
+      if (t > 0) {
+        const p = ray.ray.at(t, tmpV);
+        if (insidePond(p.x, p.z, 0.2)) {
+          this.addRipple(p.x, p.z, 0.7);
+          this.sfx?.bubble();
+        }
+      }
+      this.onFishClick?.(null);
     });
+  }
+
+  // 화면에서 누른 곳 → 물고기가 갈 3D 위치
+  pickSwimPoint(r, fish) {
+    let p = null;
+    if (this.view.mode === 'pond') {
+      // 위에서 볼 때는 물 너머로 보이는 '바닥' 지점을 찾는다 (광선을 따라 조금씩 전진)
+      for (let t = 0; t < 90; t += 0.12) {
+        const q = r.at(t, tmpV2);
+        if (q.y > 0.2) continue;
+        if (insidePond(q.x, q.z, 0) && q.y <= floorHeight(q.x, q.z)) {
+          p = q.clone();
+          break;
+        }
+        if (q.y < FLOOR_Y - 1) break;
+      }
+      if (!p) {
+        const t = -r.origin.y / r.direction.y;
+        if (t > 0 && Number.isFinite(t)) p = r.at(t, new THREE.Vector3());
+      }
+    } else {
+      // 물고기 시점에서는 물고기와 같은 높이의 평면
+      const t = (fish.pos.y - r.origin.y) / r.direction.y;
+      if (t > 0 && Number.isFinite(t)) p = r.at(t, new THREE.Vector3());
+    }
+    if (!p) return null;
+    // 연못 안쪽으로 끌어오기
+    for (let i = 0; i < 30 && !insidePond(p.x, p.z, 1.3); i++) {
+      p.x *= 0.93;
+      p.z *= 0.93;
+    }
+    if (!insidePond(p.x, p.z, 1.0)) return null;
+    const lo = floorHeight(p.x, p.z) + fish.radius + 0.45;
+    const hi = SWIM_TOP - 0.1;
+    p.y = this.view.mode === 'pond' ? clamp(fish.pos.y, Math.min(lo, hi), hi) : clamp(p.y, Math.min(lo, hi), hi);
+    return p;
+  }
+
+  // 목적지 표시: 금빛 고리 + 수면 위 빛 기둥, 도착하면 사라짐
+  showMarker(fish, p) {
+    if (!this.marker) {
+      const g = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.32, 0.42, 40),
+        new THREE.MeshBasicMaterial({ color: 0xffcf6b, transparent: true, depthTest: false, side: THREE.DoubleSide }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.renderOrder = 6;
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.03, 0.03, 1, 6, 1, true),
+        new THREE.MeshBasicMaterial({ color: 0xffe2a0, transparent: true, opacity: 0.5, depthWrite: false }),
+      );
+      beam.renderOrder = 6;
+      const glow = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd27a, transparent: true, depthWrite: false, depthTest: false }),
+      );
+      glow.renderOrder = 6;
+      g.add(ring, beam, glow);
+      g.userData = { ring, beam, glow };
+      this.scene.add(g);
+      this.marker = g;
+    }
+    const m = this.marker;
+    m.visible = true;
+    m.position.copy(p);
+    m.userData.fish = fish;
+    m.userData.life = 1;
+    m.userData.t = 0;
+    // 목적지에서 수면까지 가는 빛 기둥
+    const h = Math.max(0.05, -p.y);
+    m.userData.beam.scale.set(1, h, 1);
+    m.userData.beam.position.y = h / 2;
+  }
+
+  updateMarker(dt) {
+    const m = this.marker;
+    if (!m?.visible) return;
+    const u = m.userData;
+    u.t += dt;
+    const going = u.fish?.manual && u.fish.manual.distanceToSquared(m.position) < 1e-6;
+    if (!going) u.life -= dt * 2.5;
+    if (u.life <= 0) {
+      m.visible = false;
+      return;
+    }
+    const pulse = 1 + Math.sin(u.t * 6) * 0.12;
+    u.ring.scale.setScalar(pulse * (going ? 1 : 1 + (1 - u.life)));
+    u.ring.material.opacity = 0.9 * u.life;
+    u.beam.material.opacity = 0.45 * u.life;
+    u.glow.material.opacity = 0.8 * u.life;
+    u.glow.scale.setScalar(0.9 * pulse);
+  }
+
+  // 다른 사람이 보낸 '여기로 헤엄쳐' 신호
+  swimFishTo(id, arr) {
+    const f = this.fishes.get(id);
+    if (!f || !Array.isArray(arr)) return;
+    f.swimTo(new THREE.Vector3(arr[0], arr[1], arr[2]));
   }
 
   resize() {
@@ -1922,6 +2072,7 @@ export class World {
     this.resolveCollisions(dt, time);
     this.pushPlants(dt, time);
     this.updateCamera(dt);
+    this.updateMarker(dt);
 
 
     // 물방울

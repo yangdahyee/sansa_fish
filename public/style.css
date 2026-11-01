@@ -66,6 +66,7 @@ button.link { background: none; color: var(--ink-dim); text-decoration: underlin
 .panel h2 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.02em; }
 .panel h3 { margin: 18px 0 8px; font-size: 13px; color: var(--ink-dim); }
 .hint { margin: 0 0 14px; font-size: 13px; line-height: 1.55; color: var(--ink-dim); }
+.hint.tip { margin: -4px 0 10px; font-size: 12px; }
 .hint.sleep { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(127, 227, 201, .08); color: var(--mint); }
 
 .field { display: block; margin: 14px 0; }

@@ -257,6 +257,17 @@ wss.on('connection', (ws, req) => {
         broadcast(room, { t: 'bubble', from: client.id, i: idx });
         break;
       }
+      case 'goto': {
+        // 내 물고기를 누른 자리로 — 다른 사람 화면에서도 같은 곳으로 헤엄치게
+        if (!client.joined) return;
+        const now = Date.now();
+        if (now - (client.lastGoto || 0) < 200) return;
+        client.lastGoto = now;
+        const p = Array.isArray(m.p) ? m.p.slice(0, 3).map(Number) : [];
+        if (p.length !== 3 || !p.every(Number.isFinite)) return;
+        broadcast(room, { t: 'goto', from: client.id, p: p.map((v) => Math.max(-30, Math.min(30, v))) }, client.id);
+        break;
+      }
       case 'act': {
         // 헤엄 동작(질주, 맴돌기 등) — 다른 사람 화면에서도 같은 동작을 하게
         if (!client.joined || !allow(500)) return;
