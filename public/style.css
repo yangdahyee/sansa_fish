@@ -1,0 +1,194 @@
+:root {
+  --ink: #eaf4ff;
+  --ink-dim: #9fb6cf;
+  --deep: #0b1a2e;
+  --glass: rgba(12, 28, 48, 0.72);
+  --glass-line: rgba(160, 210, 255, 0.18);
+  --gold: #ffcf6b;
+  --coral: #ff8a7a;
+  --mint: #7fe3c9;
+  --radius: 16px;
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--deep); color: var(--ink); }
+button, input { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#labels { position: fixed; inset: 0; pointer-events: none; }
+
+/* ---------- 로딩 ---------- */
+.loading {
+  position: fixed; inset: 0; display: grid; place-content: center; text-align: center;
+  background: radial-gradient(ellipse at 50% 40%, #16365a, var(--deep));
+  z-index: 50; transition: opacity .8s;
+}
+.loading.done { opacity: 0; pointer-events: none; }
+.loading-fish { font-size: 48px; animation: swimy 1.6s ease-in-out infinite; }
+.loading p { color: var(--ink-dim); }
+@keyframes swimy { 50% { transform: translateX(16px) rotate(-6deg); } }
+
+/* ---------- 상단 ---------- */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center;
+  padding: max(12px, env(safe-area-inset-top)) 16px 12px; pointer-events: none; z-index: 10;
+}
+.topbar > * { pointer-events: auto; }
+.brand { display: flex; gap: 10px; align-items: center; }
+.brand-mark {
+  width: 40px; height: 40px; display: grid; place-content: center; border-radius: 12px;
+  background: linear-gradient(135deg, var(--gold), var(--coral)); color: #3a1a00; font-weight: 800; font-size: 20px;
+  box-shadow: 0 6px 20px rgba(255, 170, 90, .35);
+}
+.brand h1 { margin: 0; font-size: 17px; letter-spacing: -.02em; }
+.brand .sub { margin: 2px 0 0; font-size: 12px; color: var(--ink-dim); }
+.top-actions { display: flex; gap: 8px; }
+
+button { cursor: pointer; border: 0; border-radius: 12px; padding: 10px 14px; background: rgba(255,255,255,.1); transition: transform .12s, background .2s; }
+button:hover { background: rgba(255,255,255,.18); }
+button:active { transform: scale(.96); }
+button.ghost { background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(10px); font-size: 13px; }
+button.icon { width: 40px; padding: 8px 0; }
+button.primary { background: linear-gradient(135deg, #ffd27a, #ff9a6b); color: #3a1800; font-weight: 700; }
+button.primary:hover { filter: brightness(1.05); }
+button.small { padding: 8px 12px; font-size: 13px; }
+button.link { background: none; color: var(--ink-dim); text-decoration: underline; padding: 4px; font-size: 12px; }
+.mobile-only { display: none; }
+
+/* ---------- 패널 ---------- */
+.panel {
+  position: fixed; top: 76px; right: 16px; width: 340px; max-height: calc(100% - 160px); overflow: auto;
+  background: var(--glass); border: 1px solid var(--glass-line); border-radius: var(--radius);
+  backdrop-filter: blur(14px); padding: 18px; z-index: 10; box-shadow: 0 20px 50px rgba(0,0,0,.35);
+}
+.panel h2 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.02em; }
+.panel h3 { margin: 18px 0 8px; font-size: 13px; color: var(--ink-dim); }
+.hint { margin: 0 0 14px; font-size: 13px; line-height: 1.55; color: var(--ink-dim); }
+.hint.sleep { margin-top: 12px; padding: 10px 12px; border-radius: 12px; background: rgba(127, 227, 201, .08); color: var(--mint); }
+
+.field { display: block; margin: 14px 0; }
+.field > span { display: block; font-size: 12px; color: var(--ink-dim); margin-bottom: 6px; }
+input[type="text"], input:not([type]) {
+  width: 100%; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--glass-line);
+  background: rgba(0, 10, 25, .45); outline: none;
+}
+input:not([type]):focus { border-color: rgba(255, 207, 107, .6); }
+.row { display: flex; gap: 8px; }
+.row input { flex: 1; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--ink-dim); margin: 12px 0 16px; }
+#btnRelease { width: 100%; padding: 13px; font-size: 15px; }
+
+.species { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.species button {
+  padding: 10px 4px 8px; border-radius: 12px; border: 2px solid transparent; background: rgba(255,255,255,.06);
+  display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px;
+}
+.species button .dot { width: 26px; height: 26px; border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; }
+.species button.on { border-color: var(--gold); background: rgba(255, 207, 107, .12); }
+
+.todo-draft { margin: 0 0 8px; padding-left: 20px; font-size: 13px; }
+.todo-draft li { padding: 4px 0; display: flex; justify-content: space-between; gap: 6px; }
+.todo-draft li::marker { color: var(--ink-dim); }
+.todo-draft li button { padding: 0 6px; background: none; color: var(--ink-dim); }
+
+.dream-head { display: flex; justify-content: space-between; align-items: center; }
+.fish-name { margin: 0; font-size: 12px; color: var(--gold); font-weight: 700; }
+.badge { font-size: 11px; color: var(--ink-dim); border: 1px solid var(--glass-line); border-radius: 99px; padding: 2px 8px; }
+.dream-text { margin: 6px 0 12px; font-size: 18px; line-height: 1.4; word-break: keep-all; }
+
+.falls { margin: 4px 0 14px; }
+.falls-bar { height: 10px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
+.falls-fill { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, #6fd0ff, var(--gold)); transition: width .8s cubic-bezier(.2,.9,.2,1); }
+.falls-label { margin: 6px 0 0; font-size: 12px; color: var(--ink-dim); }
+
+.todo-list { list-style: none; margin: 0 0 12px; padding: 0; }
+.todo-list li {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 6px; border-radius: 12px;
+  background: rgba(255,255,255,.05); cursor: pointer; transition: background .2s; font-size: 14px;
+}
+.todo-list li:hover { background: rgba(255,255,255,.1); }
+.todo-list li .box { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--ink-dim); display: grid; place-content: center; font-size: 12px; }
+.todo-list li.done { color: var(--ink-dim); text-decoration: line-through; cursor: default; }
+.todo-list li.done .box { border-color: var(--gold); background: var(--gold); color: #3a1800; }
+.todo-list li .del { margin-left: auto; padding: 0 6px; background: none; color: var(--ink-dim); opacity: 0; }
+.todo-list li:hover .del { opacity: 1; }
+.panel-foot { margin-top: 14px; text-align: right; }
+
+.my-stars ul { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--ink-dim); }
+.my-stars li { padding: 4px 0; }
+.my-stars li::before { content: "✦ "; color: var(--gold); }
+
+/* ---------- 물고기 카드 ---------- */
+.fish-card {
+  position: fixed; left: 16px; bottom: 88px; width: 300px; padding: 16px; z-index: 12;
+  background: var(--glass); border: 1px solid var(--glass-line); border-radius: var(--radius); backdrop-filter: blur(14px);
+  box-shadow: 0 20px 50px rgba(0,0,0,.35); animation: rise .25s ease-out;
+}
+.fish-card .close { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0; background: none; font-size: 18px; }
+.fish-card .dream-text { font-size: 16px; }
+.card-actions { display: flex; gap: 8px; }
+.card-actions button { flex: 1; }
+@keyframes rise { from { transform: translateY(12px); opacity: 0; } }
+
+/* ---------- 물방울 말 ---------- */
+.bubble-bar {
+  position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  display: flex; gap: 6px; padding: 6px; border-radius: 99px; z-index: 10;
+  background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(12px);
+  max-width: calc(100% - 24px); overflow-x: auto; scrollbar-width: none;
+}
+.bubble-bar button { flex: none; border-radius: 99px; padding: 8px 12px; font-size: 13px; white-space: nowrap; background: rgba(255,255,255,.06); }
+
+/* ---------- 3D 위 라벨 ---------- */
+.tag {
+  position: absolute; transform: translate(-50%, -100%); white-space: nowrap; pointer-events: none;
+  font-size: 11px; padding: 3px 8px; border-radius: 99px; background: rgba(5, 15, 30, .55); color: var(--ink);
+  border: 1px solid rgba(255,255,255,.12);
+}
+.tag.me { background: rgba(255, 190, 90, .85); color: #3a1800; font-weight: 700; border: 0; }
+.tag .z { color: var(--mint); margin-left: 4px; }
+.say {
+  position: absolute; transform: translate(-50%, -100%); white-space: nowrap; pointer-events: none;
+  font-size: 13px; padding: 7px 12px; border-radius: 16px; background: #fff; color: #10233d; font-weight: 600;
+  box-shadow: 0 6px 16px rgba(0,0,0,.25); animation: pop .3s cubic-bezier(.2,1.6,.4,1);
+}
+.say::after { content: ""; position: absolute; left: 50%; bottom: -6px; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #fff; border-bottom: 0; }
+@keyframes pop { from { transform: translate(-50%, -80%) scale(.6); opacity: 0; } }
+
+/* ---------- 토스트 ---------- */
+.toasts { position: fixed; top: 76px; left: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20; pointer-events: none; }
+.toast {
+  padding: 10px 14px; border-radius: 12px; font-size: 13px; max-width: 300px;
+  background: var(--glass); border: 1px solid var(--glass-line); backdrop-filter: blur(12px);
+  animation: rise .25s ease-out; transition: opacity .5s;
+}
+.toast.gold { border-color: rgba(255, 207, 107, .5); color: var(--gold); }
+
+/* ---------- 등용 축하 ---------- */
+.celebrate {
+  position: fixed; inset: 0; display: grid; place-content: center; text-align: center; z-index: 30; pointer-events: none;
+}
+.celebrate .big { font-size: clamp(28px, 6vw, 56px); font-weight: 800; color: var(--gold); text-shadow: 0 0 30px rgba(255, 200, 100, .7); animation: pop .6s ease-out; }
+.celebrate .small { margin-top: 8px; color: var(--ink); font-size: 16px; text-shadow: 0 2px 10px rgba(0,0,0,.6); }
+.petal { position: fixed; top: -20px; font-size: 18px; animation: fall linear forwards; pointer-events: none; z-index: 29; }
+@keyframes fall { to { transform: translateY(110vh) rotate(540deg); opacity: .2; } }
+
+/* ---------- 모바일 ---------- */
+@media (max-width: 720px) {
+  .mobile-only { display: inline-block; }
+  #btnShare { font-size: 0; width: 40px; padding: 8px 0; }
+  #btnShare::before { content: "🔗"; font-size: 14px; }
+  .brand h1 { font-size: 15px; }
+  .panel {
+    top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: 62%;
+    border-radius: 20px 20px 0 0; padding-bottom: max(18px, env(safe-area-inset-bottom));
+    transform: translateY(0); transition: transform .3s;
+  }
+  .panel.collapsed { transform: translateY(calc(100% - 0px)); }
+  .bubble-bar { bottom: calc(max(16px, env(safe-area-inset-bottom))); }
+  body.panel-open .bubble-bar { display: none; }
+  .fish-card { left: 12px; right: 12px; width: auto; bottom: 76px; }
+  .toasts { left: 12px; right: 12px; }
+}

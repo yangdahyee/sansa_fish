@@ -1,0 +1,21 @@
+{
+  "name": "deungyongmun-pond",
+  "version": "0.1.0",
+  "private": true,
+  "description": "등용문 연못 — 미뤄둔 꿈을 물고기로 띄우고, 할 일을 해낼 때마다 폭포를 거슬러 오르는 공유 연못",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yangdahyee/sansa_fish.git"
+  },
+  "license": "UNLICENSED",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "three": "^0.187.0",
+    "ws": "^8.22.1"
+  }
+}

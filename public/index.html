@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>등용문 연못 — 미뤄둔 꿈을 물고기로</title>
+  <meta name="description" content="오래 미뤄둔 꿈을 물고기 한 마리로 띄우고, 할 일을 하나씩 해낼 때마다 폭포를 거슬러 오르세요. 다 오르면 용이 되어 연못 하늘의 별이 됩니다." />
+  <meta name="theme-color" content="#0b1a2e" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" href="/icon.svg" />
+  <link rel="stylesheet" href="/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vendor/three/build/three.module.js",
+        "three/addons/": "/vendor/three/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="labels"></div>
+
+  <!-- 로딩 -->
+  <div id="loading" class="loading">
+    <div class="loading-fish">🐟</div>
+    <p>연못에 물을 채우는 중…</p>
+  </div>
+
+  <!-- 상단 바 -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">龍</span>
+      <div>
+        <h1>등용문 연못</h1>
+        <p class="sub"><span id="pondName">연못</span> · <span id="online">혼자</span></p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="btnShare" class="ghost" title="이 연못 링크 복사">🔗 같이 헤엄치기</button>
+      <button id="btnSound" class="ghost icon" title="소리 켜기/끄기">🔇</button>
+      <button id="btnPanel" class="ghost icon mobile-only" title="나의 꿈">📜</button>
+    </div>
+  </header>
+
+  <!-- 나의 꿈 패널 -->
+  <aside id="panel" class="panel">
+    <!-- 꿈이 없을 때: 방류 -->
+    <section id="releaseView" hidden>
+      <h2>미뤄둔 꿈 하나를 띄워 보세요</h2>
+      <p class="hint">꿈은 물고기가 되고, 할 일은 폭포의 물길이 됩니다.<br />할 일을 해낼 때마다 물고기가 한 칸씩 거슬러 오릅니다.</p>
+
+      <label class="field">
+        <span>나의 꿈</span>
+        <input id="dreamInput" maxlength="80" placeholder="예) 제주에서 작은 책방 열기" />
+      </label>
+
+      <div class="field">
+        <span>함께할 물고기</span>
+        <div id="speciesPicker" class="species"></div>
+      </div>
+
+      <div class="field">
+        <span>물길 나누기 (할 일 1~10개)</span>
+        <ol id="todoDraft" class="todo-draft"></ol>
+        <div class="row">
+          <input id="todoDraftInput" maxlength="60" placeholder="예) 동네 책방 세 곳 가 보기" />
+          <button id="btnAddDraft" class="small">추가</button>
+        </div>
+      </div>
+
+      <label class="check">
+        <input type="checkbox" id="publicInput" checked />
+        <span>연못 친구들에게 꿈 문장 보여주기</span>
+      </label>
+
+      <button id="btnRelease" class="primary">🌊 꿈 방류하기</button>
+    </section>
+
+    <!-- 꿈이 있을 때: 물길 -->
+    <section id="dreamView" hidden>
+      <div class="dream-head">
+        <span id="myFishName" class="fish-name"></span>
+        <span id="myVisibility" class="badge"></span>
+      </div>
+      <h2 id="myDream" class="dream-text"></h2>
+
+      <div class="falls">
+        <div class="falls-bar"><div id="fallsFill" class="falls-fill"></div></div>
+        <p id="fallsLabel" class="falls-label"></p>
+      </div>
+
+      <ul id="todoList" class="todo-list"></ul>
+
+      <div class="row">
+        <input id="todoAddInput" maxlength="60" placeholder="물길 하나 더 내기" />
+        <button id="btnAddTodo" class="small">추가</button>
+      </div>
+
+      <p id="sleepNote" class="hint sleep" hidden>물고기가 수초 아래에서 쉬고 있어요. 미뤄도 괜찮아요 — 하나만 해내면 다시 깨어나요.</p>
+
+      <div class="panel-foot">
+        <button id="btnLetGo" class="link">꿈 놓아주기</button>
+      </div>
+    </section>
+
+    <!-- 지나간 별들 -->
+    <section id="myStars" class="my-stars" hidden>
+      <h3>내가 띄운 별</h3>
+      <ul id="myStarList"></ul>
+    </section>
+  </aside>
+
+  <!-- 다른 물고기 카드 -->
+  <div id="fishCard" class="fish-card" hidden>
+    <button class="close" id="cardClose" aria-label="닫기">×</button>
+    <p class="fish-name" id="cardName"></p>
+    <p class="dream-text" id="cardDream"></p>
+    <div class="falls small">
+      <div class="falls-bar"><div id="cardFill" class="falls-fill"></div></div>
+      <p id="cardLabel" class="falls-label"></p>
+    </div>
+    <div class="card-actions">
+      <button id="btnFeed" class="primary small">🍚 응원 먹이 주기</button>
+      <button id="btnFollow" class="small">🐟 같이 헤엄치기</button>
+    </div>
+  </div>
+
+  <!-- 정해진 말 물방울 -->
+  <nav id="bubbleBar" class="bubble-bar"></nav>
+
+  <div id="toasts" class="toasts"></div>
+  <div id="celebrate" class="celebrate" hidden></div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

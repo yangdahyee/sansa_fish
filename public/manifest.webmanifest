@@ -1,0 +1,10 @@
+{
+  "name": "등용문 연못",
+  "short_name": "등용문",
+  "description": "미뤄둔 꿈을 물고기로 띄우고, 할 일을 해낼 때마다 폭포를 거슬러 오르는 공유 연못",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1a2e",
+  "theme_color": "#0b1a2e",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
