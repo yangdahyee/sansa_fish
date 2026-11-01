@@ -287,7 +287,8 @@ wss.on('connection', (ws, req) => {
           name: client.fish.name,
           dream: client.fish.isPublic ? client.fish.dream : '',
           species: client.fish.species,
-          at: Date.now(),
+          // 클라이언트가 정한 시각을 쓰면 모두의 하늘에서 별 자리가 같아짐 (1분 이내만 인정)
+          at: Math.abs(Number(m.at) - Date.now()) < 60000 ? Math.floor(Number(m.at)) : Date.now(),
         };
         (stars[pond] ||= []).push(star);
         if (stars[pond].length > 500) stars[pond].splice(0, stars[pond].length - 500);

@@ -333,10 +333,11 @@ class Fish {
     this.action = { type: 'leap', phase: 'rise', t: 0, dir };
   }
 
-  ascend(onDone) {
+  // starPos: 이 꿈이 별이 될 하늘 위치 (비행 경로의 끝)
+  ascend(onDone, starPos = null) {
     this.move = null;
     this.manual = null;
-    this.action = { type: 'ascend', phase: 'toFalls', t: 0, onDone, from: this.pos.clone() };
+    this.action = { type: 'ascend', phase: 'toFalls', t: 0, onDone, starPos, from: this.pos.clone() };
   }
 
   dispose() {
@@ -836,32 +837,49 @@ class Fish {
           w.splash(this.pos, 0.6, false);
           w.sfx?.plop();
           a.tier++;
+          w.onAscendStep?.(this, a.tier); // 한 단 오를 때마다 (해낸 할 일 띄우기)
           a.t = 0;
           a.from = this.pos.clone();
           if (a.tier >= TIERS) {
             a.phase = 'transform';
             a.t = 0;
             w.burst(this.pos, 0xffd27a, 80);
+            w.ceremonyStart(this);
           }
         }
         return;
       }
       if (a.phase === 'transform') {
-        // 폭포 꼭대기에서 금빛으로
-        a.t += dt / 1.6;
+        // 등용문 앞: 빛기둥 아래에서 천천히 떠오르며 금빛으로 (카메라가 문을 크게 잡는 동안)
+        a.t += dt / 3.2;
         const t = Math.min(1, a.t);
         this.model.traverse((o) => {
           if (o.isMesh && o.material.emissive) {
             o.material.emissive.setRGB(1, 0.62, 0.12).multiplyScalar(t * 0.45); // 원래 색이 남도록 은은한 금빛
           }
         });
-        this.root.rotation.y += dt * 6 * t;
-        this.pos.y += Math.sin(time * 6) * 0.004;
+        a.base ??= this.pos.clone();
+        this.pos.set(a.base.x, a.base.y + easeInOut(t) * 0.9 + Math.sin(time * 3) * 0.05, a.base.z);
+        this.root.rotation.y += dt * (1.5 + 5 * t);
+        // 금빛 소용돌이
+        if (Math.random() < 0.9) {
+          const ang = time * 5 + Math.random() * 0.6;
+          const r = 1.3 - t * 0.6;
+          w.spawnParticle(
+            tmpV2.set(this.pos.x + Math.cos(ang) * r, this.pos.y - 0.6 + Math.random() * 1.4, this.pos.z + Math.sin(ang) * r),
+            Math.random() < 0.5 ? 0xffd27a : 0xfff3c4,
+            new THREE.Vector3(-Math.sin(ang) * 1.2, rand(0.4, 1.2), Math.cos(ang) * 1.2),
+            1.2,
+            rand(0.12, 0.26),
+            0,
+          );
+        }
         if (a.t >= 1) {
           a.phase = 'fly';
           a.t = 0;
           a.from = this.pos.clone();
           a.trail = w.makeTrail();
+          w.ringPulse(this.pos, 0xffe2a0);
         }
         return;
       }
@@ -878,7 +896,7 @@ class Fish {
           const swoop = a.from.clone().lerp(camPos, 0.45).addScaledVector(UP, 4);
           a.near = camPos.clone().addScaledVector(fwd, 4.6).addScaledVector(right, 1.3).addScaledVector(up, -0.4);
           const past = camPos.clone().addScaledVector(fwd, 1.2).addScaledVector(right, -3.2).addScaledVector(up, 2.4);
-          const sky = new THREE.Vector3(a.from.x - 8, 42, -65);
+          const sky = a.starPos ? a.starPos.clone() : new THREE.Vector3(a.from.x - 8, 42, -65);
           a.curve = new THREE.CatmullRomCurve3([a.from.clone(), through, behind, swoop, a.near, past, sky], false, 'centripetal');
           a.nearU = 4 / 6; // 화면 앞을 지나는 순간
           a.u = 0;
@@ -901,6 +919,7 @@ class Fish {
         }
         if (a.u >= 1) {
           w.burst(this.pos, 0xffffff, 60, 2);
+          w.ringPulse(this.pos, 0xffffff, 14);
           w.fadeTrail(a.trail);
           const cb = a.onDone;
           this.action = { type: 'gone' };
@@ -939,6 +958,10 @@ export class World {
     this.under = false;
     this.onViewChange = null;
     this.onSwimTo = null;
+    this.onAscendStep = null;
+    this.director = null;
+    this.pulses = [];
+    this.floats = [];
   }
 
   async init(onProgress) {
@@ -1240,6 +1263,7 @@ export class World {
 
     // 꼭대기 문(등용문)
     const gateM = new THREE.MeshStandardMaterial({ color: 0xb8352c, roughness: 0.6 });
+    const capM = new THREE.MeshStandardMaterial({ color: 0x2a1a14, roughness: 0.8 });
     const gate = new THREE.Group();
     for (const sx of [-1.7, 1.7]) {
       const p = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.16, 3.2, 10), gateM);
@@ -1261,9 +1285,24 @@ export class World {
       gate.add(rod, tip);
     }
     // 가운데 태극 문양 대신 금빛 원
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.28, 24), new THREE.MeshBasicMaterial({ color: 0xffcf6b }));
-    disc.position.set(0, 2.48, 0.1);
-    gate.add(disc);
+    // 현판: 평소엔 '登龍門', 등용 의식 때는 그 사람의 꿈이 금빛으로 새겨짐
+    this.plaqueCanvas = document.createElement('canvas');
+    this.plaqueCanvas.width = 1024;
+    this.plaqueCanvas.height = 192;
+    this.plaqueTex = new THREE.CanvasTexture(this.plaqueCanvas);
+    this.plaqueTex.colorSpace = THREE.SRGBColorSpace;
+    this.plaqueTex.anisotropy = 4;
+    const plaque = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.0, 0.5625),
+      new THREE.MeshBasicMaterial({ map: this.plaqueTex, toneMapped: false }),
+    );
+    plaque.position.set(0, 2.47, 0.12);
+    gate.add(plaque);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(3.12, 0.66, 0.08), capM);
+    frame.position.set(0, 2.47, 0.06);
+    gate.add(frame);
+    this.plaqueGlow = 0;
+    this.setPlaque(null);
     // 기둥 받침돌 — 문이 바닥에 단단히 서 있게
     const baseM = new THREE.MeshStandardMaterial({ color: 0x6b6f75, roughness: 0.9, flatShading: true });
     for (const sx of [-1.7, 1.7]) {
@@ -1628,6 +1667,197 @@ export class World {
     t.fading = true;
   }
 
+  // ---------- 등용 의식 ----------
+  // 현판 글씨: text 가 없으면 '登龍門'
+  setPlaque(text, glow = 0) {
+    const c = this.plaqueCanvas;
+    const g = c.getContext('2d');
+    const W = c.width;
+    const H = c.height;
+    g.clearRect(0, 0, W, H);
+    const bg = g.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, '#3b2418');
+    bg.addColorStop(1, '#22140d');
+    g.fillStyle = bg;
+    g.fillRect(0, 0, W, H);
+    g.strokeStyle = '#c9a24a';
+    g.lineWidth = 6;
+    g.strokeRect(10, 10, W - 20, H - 20);
+    const t = text || '登 龍 門';
+    let size = text ? 92 : 120;
+    const font = (sz) => `700 ${sz}px "Noto Serif KR", "Nanum Myeongjo", "AppleMyungjo", "Batang", serif`;
+    g.font = font(size);
+    while (g.measureText(t).width > W - 90 && size > 34) g.font = font((size -= 4));
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    if (glow > 0) {
+      g.shadowColor = 'rgba(255, 210, 120, 0.95)';
+      g.shadowBlur = 30 * glow;
+    }
+    const tg = g.createLinearGradient(0, H * 0.25, 0, H * 0.8);
+    tg.addColorStop(0, '#fff3c4');
+    tg.addColorStop(0.5, '#ffd27a');
+    tg.addColorStop(1, '#c98a2e');
+    g.fillStyle = tg;
+    g.fillText(t, W / 2, H / 2 + 4);
+    this.plaqueTex.needsUpdate = true;
+  }
+
+  // 꼭대기에 닿았을 때: 하늘에서 내려오는 빛기둥, 문이 환하게
+  ceremonyStart(fish) {
+    if (!this.beam) {
+      const mat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+        uniforms: { uTime: this.waterUniforms.uTime, uAlpha: { value: 0 } },
+        vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }`,
+        fragmentShader: `uniform float uTime; uniform float uAlpha; varying vec2 vUv;
+          void main(){
+            float edge = pow(sin(vUv.x * 3.14159), 2.0);
+            float fall = smoothstep(0.0, 0.25, vUv.y) * (1.0 - smoothstep(0.7, 1.0, vUv.y) * 0.6);
+            float flow = 0.75 + 0.25 * sin(vUv.y * 24.0 - uTime * 6.0 + vUv.x * 9.0);
+            gl_FragColor = vec4(vec3(1.0, 0.86, 0.55) * edge * fall * flow * uAlpha, 1.0);
+          }`,
+      });
+      this.beam = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.6, 40, 32, 1, true), mat);
+      this.scene.add(this.beam);
+    }
+    this.beam.position.set(fish.pos.x, fish.pos.y + 19, fish.pos.z);
+    this.beam.userData.target = 0.9;
+    this.ringPulse(fish.pos, 0xffd27a, 6);
+  }
+
+  ceremonyEnd() {
+    if (this.beam) this.beam.userData.target = 0;
+  }
+
+  // 퍼져 나가는 빛 고리
+  ringPulse(pos, color = 0xffd27a, size = 8) {
+    const s = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: this.ringTex || (this.ringTex = this.makeRingTexture()),
+        color,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false,
+      }),
+    );
+    s.position.copy(pos);
+    s.scale.setScalar(0.5);
+    this.scene.add(s);
+    this.pulses.push({ s, t: 0, size });
+  }
+
+  makeRingTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const grd = g.createRadialGradient(64, 64, 30, 64, 64, 62);
+    grd.addColorStop(0, 'rgba(255,255,255,0)');
+    grd.addColorStop(0.7, 'rgba(255,255,255,0.9)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 128, 128);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  }
+
+  // 3D 위치에 붙어 떠오르다 사라지는 글씨 (해낸 할 일 등)
+  floatText(text, pos, cls = 'journey', life = 3.2) {
+    const el = document.createElement('div');
+    el.className = `float-text ${cls}`;
+    el.textContent = text;
+    this.labels.appendChild(el);
+    this.floats.push({ el, pos: pos.clone(), t: 0, life });
+  }
+
+  // 카메라 연출: 물고기를 따라 폭포를 오르고 → 등용문을 크게 → 하늘의 별까지 → 원래 자리로
+  startDirector(fish, onEnd) {
+    this.director = {
+      fish,
+      onEnd,
+      saved: { pos: this.camera.position.clone(), target: this.controls.target.clone() },
+      look: this.controls.target.clone(),
+      t: 0,
+      stage: 'follow',
+    };
+    this.controls.enabled = false;
+  }
+
+  updateDirector(dt) {
+    const d = this.director;
+    const f = d.fish;
+    const a = f?.action;
+    const gateLook = new THREE.Vector3(0, GATE_BASE_Y + 1.5, GATE_Z);
+    const gateCam = new THREE.Vector3(0.6, GATE_BASE_Y + 2.1, GATE_Z + 8.2);
+    let wantPos;
+    let wantLook;
+    let rp = 2.2; // 위치 따라가는 빠르기
+    let rl = 4; // 시선 따라가는 빠르기
+
+    if (d.stage === 'follow' && a?.type === 'ascend') {
+      if (a.phase === 'toFalls' || a.phase === 'climb') {
+        // 물고기 옆 앞쪽에서 바짝 따라가며 폭포를 함께 오름
+        wantLook = f.pos.clone().add(new THREE.Vector3(0, 0.5, 0));
+        wantPos = f.pos.clone().add(new THREE.Vector3(4.2, 2.0 + f.pos.y * 0.08, 6.2));
+      } else if (a.phase === 'transform') {
+        // 등용문 정면으로 다가가 크게 잡기
+        wantLook = gateLook.clone().lerp(f.pos, 0.3);
+        wantPos = gateCam;
+        rp = 1.4;
+        rl = 2;
+      } else if (a.phase === 'fly') {
+        // 문을 통과하는 동안은 문을 잡고, 화면 앞을 지난 뒤로는 하늘의 별을 올려다봄
+        const u = a.u ?? 0;
+        wantPos = gateCam.clone().add(new THREE.Vector3(0, -0.6 * Math.min(1, u * 2), 1.5 * Math.min(1, u * 2)));
+        wantLook = u < 0.55 ? gateLook.clone().lerp(f.pos, 0.45) : f.pos.clone();
+        rp = 1.2;
+        rl = u < 0.55 ? 2.5 : 3.5;
+      } else {
+        wantPos = this.camera.position.clone();
+        wantLook = d.look.clone();
+      }
+      d.lastFish = f.pos.clone();
+    } else {
+      // 물고기가 별이 된 뒤: 잠시 별을 바라보다가 원래 시점으로
+      if (d.stage === 'follow') {
+        d.stage = 'sky';
+        d.t = 0;
+        d.skyLook = d.lastFish ? d.lastFish.clone() : d.look.clone();
+        this.ceremonyEnd();
+      }
+      d.t += dt;
+      if (d.stage === 'sky') {
+        wantPos = this.camera.position.clone();
+        wantLook = d.skyLook;
+        if (d.t > 4.2) {
+          d.stage = 'return';
+          d.t = 0;
+        }
+      } else {
+        wantPos = d.saved.pos;
+        wantLook = d.saved.target;
+        rp = 2.2;
+        rl = 2.6;
+        if (d.t > 2.2) {
+          this.camera.position.copy(d.saved.pos);
+          this.controls.target.copy(d.saved.target);
+          this.applyPondLimits();
+          this.director = null;
+          d.onEnd?.();
+          return;
+        }
+      }
+    }
+    this.camera.position.lerp(wantPos, 1 - Math.exp(-dt * rp));
+    d.look.lerp(wantLook, 1 - Math.exp(-dt * rl));
+    this.camera.lookAt(d.look);
+  }
+
   // ---------- 별자리 ----------
   starPosition(star) {
     const h1 = hashStr(`${star.name}|${star.at}`);
@@ -1984,6 +2214,11 @@ export class World {
   updateCamera(dt) {
     const v = this.view;
     const c = this.controls;
+    if (this.director) {
+      this.updateDirector(dt);
+      this.updateUnderwater();
+      return;
+    }
     if (v.mode !== 'pond') {
       const f = this.fishes.get(v.fishId);
       if (!f || f.action?.type === 'gone') {
@@ -2018,7 +2253,11 @@ export class World {
       if (insidePond(cp.x, cp.z, -1)) cp.y = Math.max(cp.y, floorHeight(cp.x, cp.z) + 0.35);
     }
 
-    // 물속인지에 따라 안개·수면 모습 바꾸기
+    this.updateUnderwater();
+  }
+
+  // 물속인지에 따라 안개·수면 모습 바꾸기
+  updateUnderwater() {
     const p = this.camera.position;
     const under = p.y < -0.02 && insidePond(p.x, p.z, -0.2);
     if (under !== this.under) {
@@ -2251,7 +2490,42 @@ export class World {
       m.position.set(u.x + Math.sin(time + u.ph) * 0.3, -0.2 + k * 0.6, FALLS_Z + 1.4);
       m.material.opacity = 0.2 * (1 - k / 3);
     }
-    this.gateGlow.material.opacity = 0.4 + Math.sin(time * 1.5) * 0.12;
+    this.gateGlow.material.opacity = 0.4 + Math.sin(time * 1.5) * 0.12 + (this.beam?.material.uniforms.uAlpha.value || 0) * 0.5;
+    // 빛기둥
+    if (this.beam) {
+      const u = this.beam.material.uniforms.uAlpha;
+      u.value += ((this.beam.userData.target || 0) - u.value) * Math.min(1, dt * 1.5);
+      this.beam.visible = u.value > 0.01;
+    }
+    // 빛 고리
+    for (let i = this.pulses.length - 1; i >= 0; i--) {
+      const q = this.pulses[i];
+      q.t += dt / 1.4;
+      q.s.scale.setScalar(0.5 + q.size * easeInOut(Math.min(1, q.t)));
+      q.s.material.opacity = Math.max(0, 1 - q.t);
+      if (q.t >= 1) {
+        this.scene.remove(q.s);
+        q.s.material.dispose();
+        this.pulses.splice(i, 1);
+      }
+    }
+    // 떠오르는 글씨
+    for (let i = this.floats.length - 1; i >= 0; i--) {
+      const q = this.floats[i];
+      q.t += dt;
+      const k = q.t / q.life;
+      tmpV2.copy(q.pos);
+      tmpV2.y += 0.8 + k * 1.2;
+      tmpV2.project(this.camera);
+      q.el.style.left = `${(tmpV2.x * 0.5 + 0.5) * this.width}px`;
+      q.el.style.top = `${(-tmpV2.y * 0.5 + 0.5) * this.height}px`;
+      q.el.style.opacity = String(Math.min(1, q.t * 3) * (1 - Math.max(0, (k - 0.7) / 0.3)));
+      q.el.style.display = tmpV2.z < 1 ? '' : 'none';
+      if (k >= 1) {
+        q.el.remove();
+        this.floats.splice(i, 1);
+      }
+    }
 
     // 진행도 등불 깜빡임
     for (const s of this.markers.children) s.material.opacity = 0.75 + Math.sin(time * 3 + s.userData.ph) * 0.25;

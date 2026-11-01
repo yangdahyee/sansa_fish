@@ -40,32 +40,57 @@ function toast(text, cls = '') {
   while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
 }
 
-function celebrate(title, sub) {
+// 등용 마지막 장면: 꿈 문장을 크게, 걸린 날·해낸 물길을 함께
+function celebrate({ title, dream, meta = '', chips = [] }) {
   const box = $('celebrate');
   box.textContent = '';
-  const a = document.createElement('div');
-  a.className = 'big';
-  a.textContent = title;
-  const b = document.createElement('div');
-  b.className = 'small';
-  b.textContent = sub;
-  box.append(a, b);
+  const card = document.createElement('div');
+  card.className = 'cele-card';
+  const mk = (cls, text, delay) => {
+    const el = document.createElement('div');
+    el.className = cls;
+    el.textContent = text;
+    if (delay != null) el.style.animationDelay = `${delay}s`;
+    card.appendChild(el);
+    return el;
+  };
+  mk('cele-orn', '✦ 登 龍 ✦', 0);
+  mk('big', title, 0.15);
+  mk('cele-dream', dream, 0.55);
+  if (meta) mk('cele-meta', meta, 1.0);
+  if (chips.length) {
+    const wrap = document.createElement('div');
+    wrap.className = 'cele-chips';
+    chips.slice(0, 10).forEach((c, i) => {
+      const chip = document.createElement('span');
+      chip.textContent = `✓ ${c}`;
+      chip.style.animationDelay = `${1.25 + i * 0.12}s`;
+      wrap.appendChild(chip);
+    });
+    card.appendChild(wrap);
+  }
+  box.appendChild(card);
   box.classList.remove('out');
   box.hidden = false;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 46; i++) {
     const p = document.createElement('div');
     p.className = 'petal';
-    p.textContent = ['🌸', '✨', '🪷', '·'][i % 4];
+    p.textContent = ['🌸', '✨', '🪷', '✦'][i % 4];
     p.style.left = `${Math.random() * 100}vw`;
-    p.style.animationDuration = `${3 + Math.random() * 3}s`;
-    p.style.animationDelay = `${Math.random() * 1.5}s`;
+    p.style.animationDuration = `${3.5 + Math.random() * 3.5}s`;
+    p.style.animationDelay = `${Math.random() * 2}s`;
     document.body.appendChild(p);
-    setTimeout(() => p.remove(), 8000);
+    setTimeout(() => p.remove(), 9500);
   }
   clearTimeout(celebrate.t);
-  celebrate.t = setTimeout(() => box.classList.add('out'), 4600);
+  celebrate.t = setTimeout(() => box.classList.add('out'), 6200);
   clearTimeout(celebrate.t2);
-  celebrate.t2 = setTimeout(() => (box.hidden = true), 5400);
+  celebrate.t2 = setTimeout(() => (box.hidden = true), 7000);
+}
+
+function daysText(from) {
+  const days = Math.max(1, Math.ceil((Date.now() - from) / 86400000));
+  return days <= 1 ? '하루 만에' : `${days}일 만에`;
 }
 
 // 화면 아래 자막
@@ -116,6 +141,7 @@ async function main() {
     if (on) cinemaTimer = setTimeout(() => cinema(false), maxMs); // 혹시 끝나지 않아도 풀리게
   }
   const typing = () => /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName);
+  let ascending = false; // 내 물고기가 등용 중
 
   const net = new PondNet(pond);
   const others = new Map(); // netId → 공개 정보
@@ -218,24 +244,34 @@ async function main() {
     const { from, star } = e.detail;
     if (from === net.id) return; // 내 등용은 직접 처리
     const f = world.getFish(from);
+    const info = others.get(from);
     // 내가 무언가 입력하던 중이면 화면을 가리지 않는다
-    const cine = !typing();
+    const cine = !typing() && !ascending;
     const done = () => {
       world.removeFish(from);
       world.addStar(star, { flash: true });
       world.refreshMarkers();
-      celebrate(`${star.name} 님의 꿈이 용이 되었어요`, star.dream ? `“${star.dream}”` : '연못 하늘에 별이 하나 늘었어요');
-      if (cine) setTimeout(() => cinema(false), 5600);
+      celebrate({
+        title: `${star.name} 님의 꿈이 용이 되었어요`,
+        dream: star.dream ? `“${star.dream}”` : '마음속에 간직한 꿈 하나가 별이 되었어요',
+        meta: info?.total ? `물길 ${info.total}개를 거슬러 올랐어요` : '',
+      });
     };
-    if (cine) {
-      cinema(true);
-      caption(`${star.name} 님의 물고기가 폭포를 거슬러 오릅니다…`);
-    } else toast(`${star.name} 님의 물고기가 폭포를 오르고 있어요`, 'gold');
     sfx.ascend();
     if (world.view.fishId === from) world.setView('pond');
-    if (f) f.ascend(done);
+    if (cine && f) {
+      cinema(true);
+      caption(`${star.name} 님의 물고기가 폭포를 거슬러 오릅니다…`);
+      world.setPlaque(star.dream || `${star.name}의 꿈`, 1);
+      world.startDirector(f, () => {
+        cinema(false);
+        world.setPlaque(null);
+      });
+    } else toast(`${star.name} 님의 물고기가 폭포를 오르고 있어요`, 'gold');
+    if (f) f.ascend(done, world.starPosition(star));
     else done();
   });
+
   net.addEventListener('full', (e) => {
     const p = new URLSearchParams(location.search);
     p.set('pond', e.detail.suggest);
@@ -454,7 +490,6 @@ async function main() {
   }
 
   // 모든 물길을 다 해내면 → 등용
-  let ascending = false;
   function maybeAscend(delay = 300) {
     const { done, total } = progress();
     if (!state.dream || total === 0 || done < total || ascending) return;
@@ -462,32 +497,62 @@ async function main() {
     setTimeout(() => {
       const d = state.dream;
       const fish = world.getFish(ME);
-      // 화면 앞을 스쳐 가는 장면이 보이도록 연못 전체 시점으로
+      const todos = d.todos.filter((t) => t.done).map((t) => t.text);
+      // 별 정보는 미리 정해 두어야 물고기가 '자기 별 자리'로 날아감
+      const star = { name: state.name, dream: d.isPublic ? d.text : '', species: d.species, at: Date.now() };
       world.setView('pond');
-      net.send({ t: 'ascend' });
+      net.send({ t: 'ascend', at: star.at });
       sfx.ascend();
       buzz([40, 80, 40, 80, 120]);
       cinema(true);
-      caption('물고기가 폭포를 거슬러 오릅니다…');
+      caption(`“${d.text}” — 물길을 거슬러 오릅니다…`, 5000);
+      world.setPlaque(d.text, 1);
+
+      // 한 단 오를 때마다 내가 해낸 할 일을 하나씩 떠올림 (1~6단에 고르게 — 꼭대기는 현판 차례)
+      const shown = new Set();
+      world.onAscendStep = (f, tier) => {
+        if (f.id !== ME) return;
+        todos.forEach((t, i) => {
+          const at = Math.max(1, Math.round(((i + 1) * 6) / todos.length));
+          if (at === tier && !shown.has(i)) {
+            shown.add(i);
+            world.floatText(`✓ ${t}`, f.pos);
+          }
+        });
+      };
+
       const finish = () => {
-        const star = { name: state.name, dream: d.isPublic ? d.text : '', species: d.species, at: Date.now() };
         state.stars.push({ text: d.text, species: d.species, at: star.at, offline: !net.online, name: star.name, dream: star.dream });
         state.dream = null;
         save();
         world.removeFish(ME);
         world.addStar(star, { flash: true });
         world.refreshMarkers();
-        celebrate('등용! 꿈이 용이 되었어요', `“${d.text}”`);
-        setTimeout(() => cinema(false), 5600);
+        world.onAscendStep = null;
+        celebrate({
+          title: '등용! 꿈이 용이 되었어요',
+          dream: `“${d.text}”`,
+          meta: `물길 ${total}개를 거슬러 · ${daysText(d.createdAt)}`,
+          chips: todos,
+        });
         net.send({ t: 'update', fish: net.getFish() });
         renderPanel();
         ascending = false;
       };
-      if (fish) fish.ascend(finish);
-      else finish();
+      if (fish) {
+        world.startDirector(fish, () => {
+          cinema(false);
+          world.setPlaque(null);
+        });
+        fish.ascend(finish, world.starPosition(star));
+      } else {
+        finish();
+        setTimeout(() => cinema(false), 6500);
+      }
       world.refreshMarkers();
     }, delay);
   }
+
 
   $('btnLetGo').onclick = () => {
     if (!state.dream) return;
