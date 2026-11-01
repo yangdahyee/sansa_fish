@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { makeWaterMaterial, addCaustics } from './water.js';
 import { SPECIES, SPECIES_IDS, MOVES } from './data.js';
 
 // ---------- 연못 치수 ----------
@@ -1072,7 +1073,11 @@ export class World {
     const fp = floorG.attributes.position;
     for (let i = 0; i < fp.count; i++) fp.setY(i, floorHeight(fp.getX(i), fp.getZ(i)));
     floorG.computeVertexNormals();
-    const floor = new THREE.Mesh(floorG, new THREE.MeshStandardMaterial({ color: 0x5f6f58, roughness: 1 }));
+    // 모든 물(수면·폭포 웅덩이)과 코스틱이 같은 시간·물결 값을 공유
+    this.rippleData = Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, -100, 0));
+    this.waterUniforms = { uTime: { value: 0 }, uRipples: { value: this.rippleData }, uUnder: { value: 0 } };
+    const floorM = addCaustics(new THREE.MeshStandardMaterial({ color: 0x6b7660, roughness: 1 }), this.waterUniforms.uTime, 0.6);
+    const floor = new THREE.Mesh(floorG, floorM);
     this.scene.add(floor);
 
     // 주변 땅
@@ -1085,50 +1090,20 @@ export class World {
     ground.position.y = 0.12;
     this.scene.add(ground);
 
-    // 물 표면
-    this.rippleData = Array.from({ length: 8 }, () => new THREE.Vector4(0, 0, -100, 0));
-    const waterMat = new THREE.ShaderMaterial({
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      uniforms: {
-        uTime: { value: 0 },
-        uRipples: { value: this.rippleData },
-        uUnder: { value: 0 },
-      },
-      vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix * vec4(position,1.); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
-      fragmentShader: `
-        uniform float uTime; uniform float uUnder; uniform vec4 uRipples[8]; varying vec3 vW;
-        float n(vec2 p){ return sin(p.x)*sin(p.y); }
-        void main(){
-          vec2 p = vW.xz;
-          float s = n(p*1.3 + uTime*0.6) + n(p*2.1 - uTime*0.4 + 2.0)*0.6 + n(p*4.0 + vec2(uTime, -uTime)*0.5)*0.3;
-          float ring = 0.0;
-          for(int i=0;i<8;i++){
-            vec4 r = uRipples[i];
-            float age = uTime - r.z;
-            if(age > 0.0 && age < 2.5){
-              float d = distance(p, r.xy);
-              float front = age * 2.4;
-              ring += exp(-pow((d-front)*3.0, 2.0)) * (1.0 - age/2.5) * r.w;
-            }
-          }
-          vec3 deep = vec3(0.05,0.22,0.32);
-          vec3 lite = vec3(0.45,0.75,0.85);
-          vec3 c = mix(deep, lite, clamp(s*0.25+0.35 + ring*0.8, 0.0, 1.0));
-          float a = 0.34 + s*0.05 + ring*0.4;
-          if (uUnder > 0.5) {
-            // 물속에서 올려다본 수면: 은빛으로 일렁임
-            c = mix(vec3(0.25,0.55,0.68), vec3(0.88,0.97,1.0), clamp(s*0.3+0.45+ring, 0.0, 1.0));
-            a = 0.62 + ring*0.3;
-          }
-          gl_FragColor = vec4(c, a);
-        }`,
-    });
-    this.waterMat = waterMat;
-    const waterG = new THREE.CircleGeometry(1, 96);
+    // 물 표면: 하늘·달·석등 반사, 깊이에 따른 색, 가장자리 물거품 (water.js)
+    const waterOpts = {
+      RX: POND_RX,
+      RZ: POND_RZ,
+      FLOOR_Y,
+      moonDir: new THREE.Vector3(-60, 55, -120),
+      lamps: [new THREE.Vector3(-POND_RX - 0.4, 1.85, -3.5), new THREE.Vector3(POND_RX + 0.2, 1.85, 1.5)],
+    };
+    this.waterMat = makeWaterMaterial(this.waterUniforms, waterOpts);
+    this.poolMat = makeWaterMaterial(this.waterUniforms, { ...waterOpts, pool: true });
+    // 물결이 실제로 솟도록 안쪽까지 촘촘한 격자
+    const waterG = new THREE.RingGeometry(0, 1, 160, 48);
     waterG.scale(POND_RX + 0.4, POND_RZ + 0.4, 1);
-    const water = new THREE.Mesh(waterG, waterMat);
+    const water = new THREE.Mesh(waterG, this.waterMat);
     water.rotation.x = -Math.PI / 2;
     water.renderOrder = 2;
     this.scene.add(water);
@@ -1205,7 +1180,7 @@ export class World {
       moss.position.set(0, y + 0.07, z + 0.2 - depth / 2);
       fallsGroup.add(moss);
       // 작은 웅덩이 물
-      const pool = new THREE.Mesh(new THREE.PlaneGeometry(top ? 2.6 : w, top ? depth - 0.4 : 1.2), this.waterMat);
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(top ? 2.6 : w, top ? depth - 0.4 : 1.2), this.poolMat);
       pool.rotation.x = -Math.PI / 2;
       pool.position.set(0, y + 0.16, top ? z + 0.1 - (depth - 0.4) / 2 : z - 0.3);
       fallsGroup.add(pool);
@@ -1425,7 +1400,7 @@ export class World {
       mp.setXYZ(i, v.x, v.y, v.z);
     }
     marimoG.computeVertexNormals();
-    const marimoM = new THREE.MeshStandardMaterial({ color: 0x3f8f3c, roughness: 1, flatShading: true });
+    const marimoM = addCaustics(new THREE.MeshStandardMaterial({ color: 0x3f8f3c, roughness: 1, flatShading: true }), this.waterUniforms.uTime, 0.35);
     for (let i = 0; i < 9; i++) {
       const p = randomPondPoint(1.6);
       const r = rand(0.14, 0.28);
@@ -1437,7 +1412,7 @@ export class World {
     }
 
     const pebbleG = new THREE.IcosahedronGeometry(1, 1);
-    const pebbleM = new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true });
+    const pebbleM = addCaustics(new THREE.MeshStandardMaterial({ roughness: 0.9, flatShading: true }), this.waterUniforms.uTime, 0.5);
     const PEBBLES = 70;
     const pebbles = new THREE.InstancedMesh(pebbleG, pebbleM, PEBBLES);
     const pm = new THREE.Matrix4();
