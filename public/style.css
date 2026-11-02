@@ -304,6 +304,7 @@ body.cinema .letterbox { height: 9vh; }
   .views button span { display: none; }
   .views button { padding: 7px 8px; }
   .brand > div { display: none; }
+  .online-pill:not([hidden]) { display: inline-flex; }
   .fish-card { left: 12px; right: 12px; width: auto; bottom: 76px; }
   .toasts { left: 12px; right: 12px; }
 }
@@ -559,3 +560,12 @@ body.say-open .fish-card { visibility: hidden; }
 /* 하늘 연못을 보는 동안엔 아래 버튼 막대·말 고르기를 잠깐 숨김 */
 body.sky-view .action-bar, body.sky-view .say-pop, body.sky-view .bottom-bars, body.sky-view #panel, body.sky-view .mini-bar { opacity: 0; pointer-events: none; }
 body.sky-view #panel { transition: opacity .3s; }
+
+/* ---------- 휴대폰: 지금 접속한 사람 수 ---------- */
+.online-pill {
+  display: none; align-items: center; gap: 5px; padding: 6px 11px; border-radius: 99px;
+  background: var(--glass); border: 1px solid rgba(127, 227, 160, .4); backdrop-filter: blur(10px);
+  color: var(--ink); font-size: 13px; font-weight: 700; line-height: 1;
+}
+.online-pill .on-dot { width: 7px; height: 7px; border-radius: 50%; background: #7fe3a0; box-shadow: 0 0 8px #7fe3a0; }
+.online-pill.bump { animation: pop .35s cubic-bezier(.2,1.6,.4,1); }

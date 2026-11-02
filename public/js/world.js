@@ -22,38 +22,68 @@ const NPC_TARGET = 6;
 const GATE_Z = FALLS_Z - TIERS * 0.75 - 1.4; // 꼭대기 단 위, 홍살문이 서는 자리
 const GATE_BASE_Y = TIERS * TIER_H + 0.05; // 꼭대기 단 윗면 높이 // 연못이 너무 비어 보이지 않게 채우는 '연못 친구' 수
 
-// ---------- 하늘 연못: 등용문 너머 구름 위에 떠 있는 섬. 이루어진 소원이 금빛 물고기로 사는 곳 ----------
+// ---------- 하늘 연못: 등용문 너머 구름 위의 바다처럼 넓은 연못. 이루어진 소원이 물고기로 사는 곳 ----------
 const SKY_X = 0;
-const SKY_Y = 18; // 수면 높이
-const SKY_Z = -35;
-const SKY_RX = 11;
-const SKY_RZ = 7.5;
-const SKY_DEPTH = 1.2;
-// 구름다리: 섬을 비스듬히 가로지름 (앞에서 봐도 무지개 모양이 보이게)
+const SKY_Y = 22; // 수면 높이
+const SKY_Z = -64;
+const SKY_RX = 26;
+const SKY_RZ = 18;
+const SKY_DEPTH = 3.4; // 가운데 깊이
+const SHORE_E = 0.72; // 이 바깥(타원 비율)부터 물가로 얕아짐
+// 하늘 연못 바닥 높이 (섬 기준 좌표, 수면 = 0) — 셰이더의 skyFloorGLSL 과 같은 식
+function skyFloor(x, z) {
+  const e = Math.sqrt((x * x) / (SKY_RX * SKY_RX) + (z * z) / (SKY_RZ * SKY_RZ));
+  const k = Math.min(1, Math.max(0, (e - SHORE_E) / (1 - SHORE_E)));
+  const s = k * k * (3 - 2 * k);
+  return -SKY_DEPTH + (SKY_DEPTH + 0.2) * s + Math.sin(x * 0.45) * Math.cos(z * 0.5) * 0.25;
+}
+const f4 = (n) => n.toFixed(4);
+const skyFloorGLSL = `
+  float floorH(vec2 w) {
+    vec2 p = w - vec2(${f4(SKY_X)}, ${f4(SKY_Z)});
+    float e = sqrt(p.x * p.x / ${f4(SKY_RX * SKY_RX)} + p.y * p.y / ${f4(SKY_RZ * SKY_RZ)});
+    float s = smoothstep(${f4(SHORE_E)}, 1.0, e);
+    return ${f4(SKY_Y)} - ${f4(SKY_DEPTH)} + ${f4(SKY_DEPTH + 0.2)} * s + sin(p.x * 0.45) * cos(p.y * 0.5) * 0.25;
+  }`;
+
+// 구름다리: 앞쪽 물 위의 작은 바위섬 두 개를 무지개처럼 잇는 다리
+const BRIDGE_X = -2;
+const BRIDGE_Z = 5;
 const BRIDGE_ROT = 0.42;
-const BRIDGE_H = 2.4; // 가운데 높이
-const BRIDGE_SPAN = 1 / Math.sqrt(Math.cos(BRIDGE_ROT) ** 2 / SKY_RX ** 2 + Math.sin(BRIDGE_ROT) ** 2 / SKY_RZ ** 2) + 1.2;
-// 섬 기준 (x, z) → 다리 기준 (u: 다리를 따라, v: 다리를 가로질러)
-const toBridge = (x, z) => [x * Math.cos(BRIDGE_ROT) - z * Math.sin(BRIDGE_ROT), x * Math.sin(BRIDGE_ROT) + z * Math.cos(BRIDGE_ROT)];
-const fromBridge = (u, v) => [u * Math.cos(BRIDGE_ROT) + v * Math.sin(BRIDGE_ROT), -u * Math.sin(BRIDGE_ROT) + v * Math.cos(BRIDGE_ROT)];
+const BRIDGE_H = 3.4; // 가운데 높이
+const BRIDGE_SPAN = 9; // 가운데에서 바위섬까지
+const ISLET_R = 2.6;
+// 섬 기준 (x, z) ↔ 다리 기준 (u: 다리를 따라, v: 다리를 가로질러)
+const toBridge = (x, z) => {
+  const a = x - BRIDGE_X;
+  const b = z - BRIDGE_Z;
+  return [a * Math.cos(BRIDGE_ROT) - b * Math.sin(BRIDGE_ROT), a * Math.sin(BRIDGE_ROT) + b * Math.cos(BRIDGE_ROT)];
+};
+const fromBridge = (u, v) => [BRIDGE_X + u * Math.cos(BRIDGE_ROT) + v * Math.sin(BRIDGE_ROT), BRIDGE_Z - u * Math.sin(BRIDGE_ROT) + v * Math.cos(BRIDGE_ROT)];
 // 다리 위 높이 (u 에 따라 무지개처럼 휨)
-const bridgeY = (u) => 0.35 + BRIDGE_H * Math.max(0, 1 - (u / BRIDGE_SPAN) ** 2);
-// 한 번에 헤엄치는 금빛 물고기 수 (오래된 소원부터 쉬러 감 — 목록·내 소원에서 부르면 다시 나옴)
+const bridgeY = (u) => 0.9 + BRIDGE_H * Math.max(0, 1 - (u / BRIDGE_SPAN) ** 2);
+const ISLETS = [fromBridge(-BRIDGE_SPAN, 0), fromBridge(BRIDGE_SPAN, 0)];
+// 한 번에 헤엄치는 물고기 수 (오래된 소원부터 쉬러 감 — 목록·내 소원에서 부르면 다시 나옴)
 const SKY_MAX = /Mobi|Android/i.test(globalThis.navigator?.userAgent || '') ? 24 : 40;
 
-function insideSky(x, z, margin = 0.9) {
+// 물고기가 헤엄칠 수 있는 곳: 물가에서 margin 만큼 안쪽, 바위섬 밖
+function insideSky(x, z, margin = 2.5) {
   const rx = SKY_RX - margin;
   const rz = SKY_RZ - margin;
-  return (x * x) / (rx * rx) + (z * z) / (rz * rz) <= 1;
+  if ((x * x) / (rx * rx) + (z * z) / (rz * rz) > 1) return false;
+  return ISLETS.every(([ix, iz]) => Math.hypot(x - ix, z - iz) > ISLET_R + margin * 0.4);
 }
-// 하늘 연못 안의 무작위 자리 (섬 기준 좌표)
+// 하늘 연못 안의 무작위 자리 (섬 기준 좌표) — 바닥과 수면 사이
 function randomSkyPoint() {
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 40; i++) {
     const x = rand(-SKY_RX, SKY_RX);
     const z = rand(-SKY_RZ, SKY_RZ);
-    if (insideSky(x, z)) return new THREE.Vector3(x, rand(-0.75, -0.3), z);
+    if (insideSky(x, z)) {
+      const lo = Math.min(-0.7, skyFloor(x, z) + 0.6);
+      return new THREE.Vector3(x, rand(lo, -0.6), z);
+    }
   }
-  return new THREE.Vector3(0, -0.5, 0);
+  return new THREE.Vector3(0, -1.5, -4);
 }
 
 const MOVE_IDS = MOVES.map((m) => m.id);
@@ -1046,17 +1076,10 @@ class SkyFish {
         o.material.opacity = 1;
         o.material.depthWrite = true;
         o.renderOrder = 2.5;
-        // 원래 색은 그대로 (발광을 덧칠하면 색이 바래 보임). 금빛은 아래의 빛무리로
+        // 원래 색 그대로, 물속 깊이만큼 물빛을 입혀 물 안에 잠겨 있는 것처럼
+        addWaterTint(o.material, world.skyUnder, SKY_Y, 2.2);
       }
     });
-    // 금빛 빛무리: 물고기 아래에서 은은하게
-    this.halo = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: world.glowTex, color: 0xffcf6b, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }),
-    );
-    this.halo.scale.setScalar(2.4);
-    this.halo.position.y = -0.15;
-    this.halo.renderOrder = 2.4;
-    this.root.add(this.halo);
     this.pivot = new THREE.Group();
     this.pivot.add(model);
     this.root.add(this.pivot);
@@ -1076,8 +1099,8 @@ class SkyFish {
     this.pos = randomSkyPoint();
     this.target = randomSkyPoint();
     this.vel = new THREE.Vector3(rand(-1, 1), 0, rand(-1, 1)).setLength(0.4);
-    this.speed = rand(0.45, 0.85);
-    this.scaleNow = 1.45;
+    this.speed = rand(0.7, 1.3);
+    this.scaleNow = 1.6;
     this.pop = 0; // 눌렸을 때 반짝 커짐
     this.leap = null; // 물 위로 뛰어오르기 (가끔 구름다리를 넘음)
     this.nextLeap = rand(6, 30);
@@ -1115,18 +1138,24 @@ class SkyFish {
 
   // 물 위로 포물선을 그리며 뛰어오름. 구름다리 근처면 다리를 넘어 건너편으로
   startLeap() {
+    // 깊은 곳에 있으면 먼저 수면 가까이 올라온 뒤에
+    if (this.pos.y < -1.1) {
+      this.target.y = -0.6;
+      this.nextLeap = 3;
+      return;
+    }
     const from = this.pos.clone();
     let to;
     let h = rand(1.6, 2.4);
     const [u, v] = toBridge(from.x, from.z);
     if (Math.abs(v) < 3 && Math.abs(u) < BRIDGE_SPAN - 3) {
       const [tx, tz] = fromBridge(u + rand(-1, 1), (v > 0 ? -1 : 1) * rand(2.2, 3));
-      to = new THREE.Vector3(tx, -0.4, tz);
+      to = new THREE.Vector3(tx, -0.6, tz);
       h = bridgeY(u) + 1.1; // 다리 위를 넘을 만큼
     } else {
       const dir = this.vel.lengthSq() > 1e-4 ? this.vel.clone().setY(0).normalize() : new THREE.Vector3(1, 0, 0);
       to = from.clone().addScaledVector(dir, rand(2.5, 4));
-      to.y = -0.4;
+      to.y = -0.6;
     }
     if (!insideSky(to.x, to.z, 1)) return;
     this.leap = { t: 0, dur: 0.9 + h * 0.18, from, to, h };
@@ -1141,7 +1170,7 @@ class SkyFish {
   // 반짝이를 뿌린 자리로 (p: 섬 기준 좌표)
   lureTo(p) {
     if (this.leap) return;
-    this.lure = { p: new THREE.Vector3(p.x, -0.3, p.z), t: 0 };
+    this.lure = { p: new THREE.Vector3(p.x, -0.7, p.z), t: 0 };
   }
 
   update(dt, time, animate) {
@@ -1163,7 +1192,7 @@ class SkyFish {
     }
     if (!this.lure && this.pos.distanceTo(this.target) < 0.8) {
       this.target = randomSkyPoint();
-      this.speed = rand(0.45, 0.85);
+      this.speed = rand(0.7, 1.3);
     }
     const desired = tmpV.subVectors(this.target, this.pos);
     desired.setLength(Math.min(this.lure ? 2.2 : this.speed, desired.length() * 1.5));
@@ -1173,15 +1202,23 @@ class SkyFish {
       const d = this.pos.distanceTo(o.pos);
       if (d < 1.3 && d > 0.0001) desired.add(tmpV2.subVectors(this.pos, o.pos).setLength((1.3 - d) * 0.8));
     }
+    // 물가와 바위섬은 미리 돌아 감
+    if (!insideSky(this.pos.x, this.pos.z, 2)) desired.add(tmpV2.set(-this.pos.x / SKY_RX, 0, -this.pos.z / SKY_RZ).setLength(1.4));
+    for (const [ix, iz] of ISLETS) {
+      const d = Math.hypot(this.pos.x - ix, this.pos.z - iz);
+      if (d < ISLET_R + 1.8) desired.add(tmpV2.set(this.pos.x - ix, 0, this.pos.z - iz).setLength((ISLET_R + 1.8 - d) * 1.2));
+    }
     this.vel.lerp(desired, Math.min(1, dt * 1.6));
     this.pos.addScaledVector(this.vel, dt);
-    // 섬 밖으로 나가지 않게
-    if (!insideSky(this.pos.x, this.pos.z, 0.6)) {
+    // 그래도 물가를 넘으면 안쪽으로 되돌림
+    if (!insideSky(this.pos.x, this.pos.z, 1)) {
       this.pos.x *= 0.995;
       this.pos.z *= 0.995;
-      this.target.set(this.target.x * 0.3, this.target.y, this.target.z * 0.3);
+      if (!insideSky(this.target.x, this.target.z)) this.target = randomSkyPoint();
     }
-    this.pos.y = clamp(this.pos.y, -SKY_DEPTH + 0.35, -0.25);
+    // 바닥과 수면 사이 (수면 바로 아래까지만)
+    const lo = Math.max(-SKY_DEPTH + 0.4, skyFloor(this.pos.x, this.pos.z) + 0.45);
+    this.pos.y = clamp(this.pos.y, Math.min(lo, -0.5), -0.5);
     this.root.position.copy(this.pos);
     this.root.position.y += Math.sin(time * 1.3 + this.speed * 9) * 0.04;
     if (this.vel.lengthSq() > 1e-4) {
@@ -1193,7 +1230,6 @@ class SkyFish {
     this.pop = Math.max(0, this.pop - dt * 1.5);
     this.pivot.scale.setScalar(this.scaleNow * (1 + Math.sin(this.pop * Math.PI) * 0.25));
     if (animate) this.mixer.update(dt * (0.8 + this.vel.length() * 0.6));
-    this.halo.material.opacity = 0.45 + Math.sin(time * 2 + this.speed * 7) * 0.1;
     this.updateSay();
   }
 
@@ -1686,133 +1722,218 @@ export class World {
     this.scene.add(this.markers);
   }
 
-  // ---------- 하늘 연못 ----------
+  // ---------- 하늘 연못: 구름 위의 바다 ----------
   buildSkyPond() {
     const g = new THREE.Group();
     g.position.set(SKY_X, SKY_Y, SKY_Z);
     this.skyPond = g;
+    this.skyUnder = { value: 0 }; // 하늘 연못은 늘 물 밖에서 봄 (아래 연못에 잠수해도 영향 없게)
     const rockM = makeMossyRockMaterial({ color: 0x5a6470, moss: 0x3f6d4a, amount: 0.8 });
-    // 섬 아랫부분: 거꾸로 선 울퉁불퉁한 바위 (아래 연못에서 올려다보면 보임)
-    const coneG = new THREE.ConeGeometry(1, 1, 14, 5);
+    const underM = makeMossyRockMaterial({ color: 0x3a434e, moss: 0x2f4f3a, amount: 0.5 });
+
+    // 섬 아랫부분: 여기저기 매달린 바위 덩이 (아래 연못에서 올려다보면 구름 위에 뜬 섬)
+    const coneG = new THREE.ConeGeometry(1, 1, 16, 5);
     const cp = coneG.attributes.position;
     for (let i = 0; i < cp.count; i++) {
       const y = cp.getY(i);
-      if (y > 0.49) continue; // 꼭짓점은 그대로
+      if (y > 0.49) continue;
       const n = 1 + Math.sin(cp.getX(i) * 7 + y * 5) * 0.08 + rand(-0.06, 0.06);
       cp.setXYZ(i, cp.getX(i) * n, y + rand(-0.03, 0.03), cp.getZ(i) * n);
     }
     coneG.computeVertexNormals();
-    const underM = makeMossyRockMaterial({ color: 0x3a434e, moss: 0x2f4f3a, amount: 0.5 });
-    // 큰 덩이 하나 + 여기저기 매달린 작은 바위 (뾰족한 깔때기처럼 보이지 않게)
+    const K = SKY_RX / 11;
     for (const [x, z, sx, h, sz] of [
-      [0, 0, SKY_RX + 1.1, 4.2, SKY_RZ + 1.1],
-      [-4.6, 1, 4, 4, 3.4],
-      [4.4, -0.6, 4.4, 3.4, 3.6],
-      [1, 2.6, 3.4, 3, 2.8],
-      [-1.4, -2.6, 3.8, 4.6, 3],
-      [7, 2, 2.6, 2.4, 2.2],
-      [-7.2, -1.5, 2.4, 2.8, 2],
+      [0, 0, SKY_RX + 1.5, 7, SKY_RZ + 1.5],
+      [-4.6 * K, 1 * K, 4 * K, 6, 3.4 * K],
+      [4.4 * K, -0.6 * K, 4.4 * K, 5.5, 3.6 * K],
+      [1 * K, 2.6 * K, 3.4 * K, 5, 2.8 * K],
+      [-1.4 * K, -2.6 * K, 3.8 * K, 7, 3 * K],
+      [7 * K, 2 * K, 2.6 * K, 4, 2.2 * K],
+      [-7.2 * K, -1.5 * K, 2.4 * K, 4.6, 2 * K],
     ]) {
       const under = new THREE.Mesh(coneG, underM);
       under.rotation.x = Math.PI;
       under.rotation.y = rand(0, 6);
       under.scale.set(sx, h, sz);
-      under.position.set(x, -SKY_DEPTH - h / 2 + 0.05, z);
+      under.position.set(x, -SKY_DEPTH - 0.5 - h / 2, z); // 윗면이 바닥(최저 -깊이-0.25)보다 아래로
       g.add(under);
     }
-    // 둑(옆벽)과 바닥
-    const wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 48, 1, true), rockM);
-    wall.scale.set(SKY_RX + 0.9, SKY_DEPTH + 0.2, SKY_RZ + 0.9);
-    wall.position.y = -SKY_DEPTH / 2 + 0.05;
+    // 옆벽 (바닥과 섬 아래 사이를 막음)
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 64, 1, true), rockM);
+    wall.scale.set(SKY_RX + 1.2, SKY_DEPTH + 0.6, SKY_RZ + 1.2);
+    wall.position.y = -SKY_DEPTH / 2 - 0.1;
     g.add(wall);
+
+    // 바닥: 가운데는 깊고 물가로 갈수록 얕아지는 모래 (물속 빛 무늬)
+    const floorG = new THREE.PlaneGeometry((SKY_RX + 1.5) * 2, (SKY_RZ + 1.5) * 2, 140, 100);
+    floorG.rotateX(-Math.PI / 2);
+    const fp = floorG.attributes.position;
+    for (let i = 0; i < fp.count; i++) {
+      const x = fp.getX(i);
+      const z = fp.getZ(i);
+      const e = Math.sqrt((x * x) / ((SKY_RX + 1.2) ** 2) + (z * z) / ((SKY_RZ + 1.2) ** 2));
+      fp.setY(i, e > 1 ? -SKY_DEPTH - 0.5 : skyFloor(x, z)); // 섬 밖은 벽 안쪽으로 숨김
+    }
+    floorG.computeVertexNormals();
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(1, 48),
-      addCaustics(new THREE.MeshStandardMaterial({ color: 0x5d8a7a, roughness: 1, emissive: 0x10302c }), this.waterUniforms.uTime, 0.7),
+      floorG,
+      addCaustics(new THREE.MeshStandardMaterial({ color: 0x8f8a6a, roughness: 1 }), this.waterUniforms.uTime, 0.7, SKY_Y),
     );
-    floor.rotation.x = -Math.PI / 2;
-    floor.scale.set(SKY_RX + 0.9, SKY_RZ + 0.9, 1);
-    floor.position.y = -SKY_DEPTH;
     g.add(floor);
-    // 물
-    const water = new THREE.Mesh(new THREE.CircleGeometry(1, 64), this.poolMat);
+    // 바닥의 조약돌·수초 몇 포기
+    const pebM = new THREE.MeshStandardMaterial({ color: 0x6d6a5c, roughness: 0.9, flatShading: true });
+    const pebbles = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.25, 0), pebM, 160);
+    const pm = new THREE.Matrix4();
+    const pq = new THREE.Quaternion();
+    for (let i = 0; i < pebbles.count; i++) {
+      const x = rand(-SKY_RX, SKY_RX);
+      const z = rand(-SKY_RZ, SKY_RZ);
+      if ((x * x) / (SKY_RX * SKY_RX) + (z * z) / (SKY_RZ * SKY_RZ) > 0.95) {
+        pm.makeScale(0, 0, 0);
+      } else {
+        const sc = rand(0.5, 1.6);
+        pq.setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3)));
+        pm.compose(new THREE.Vector3(x, skyFloor(x, z) + 0.05, z), pq, new THREE.Vector3(sc, sc * 0.6, sc));
+      }
+      pebbles.setMatrixAt(i, pm);
+    }
+    g.add(pebbles);
+
+    // 물: 아래 연못과 같은 물 (깊이에 따른 색·하늘과 달 반사·물가 물거품·잔물결)
+    this.skyWaterMat = makeWaterMaterial(
+      { ...this.waterUniforms, uUnder: this.skyUnder },
+      {
+        RX: SKY_RX,
+        RZ: SKY_RZ,
+        FLOOR_Y: -SKY_DEPTH,
+        moonDir: new THREE.Vector3(-60, 55 - SKY_Y, -120 - SKY_Z),
+        lamps: [new THREE.Vector3(0, -1000, 0), new THREE.Vector3(0, -1000, 0)],
+        floorFn: skyFloorGLSL,
+      },
+    );
+    const waterG = new THREE.RingGeometry(0, 1, 180, 60);
+    waterG.scale(SKY_RX + 0.6, SKY_RZ + 0.6, 1);
+    const water = new THREE.Mesh(waterG, this.skyWaterMat);
     water.rotation.x = -Math.PI / 2;
-    water.scale.set(SKY_RX + 0.6, SKY_RZ + 0.6, 1);
     water.renderOrder = 2;
     g.add(water);
-    // 둘레 바위
+
+    // 물가 바위
     const rockG = new THREE.DodecahedronGeometry(1, 0);
-    const n = 58;
+    const n = 130;
     const rocks = new THREE.InstancedMesh(rockG, rockM, n);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + rand(-0.05, 0.05);
-      const sc = rand(0.4, 0.85);
+      const a = (i / n) * Math.PI * 2 + rand(-0.03, 0.03);
+      const sc = rand(0.7, 1.6);
       q.setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3)));
       m.compose(
-        new THREE.Vector3(Math.cos(a) * (SKY_RX + rand(0.5, 1)), rand(-0.15, 0.15), Math.sin(a) * (SKY_RZ + rand(0.5, 1))),
+        new THREE.Vector3(Math.cos(a) * (SKY_RX + rand(0.4, 1.4)), rand(-0.3, 0.2), Math.sin(a) * (SKY_RZ + rand(0.4, 1.4))),
         q,
-        new THREE.Vector3(sc * 1.3, sc * 0.75, sc),
+        new THREE.Vector3(sc * 1.3, sc * 0.7, sc),
       );
       rocks.setMatrixAt(i, m);
     }
     g.add(rocks);
-    // 연잎·연꽃 몇 송이
-    const padTex = makePadTexture(1);
-    const padM = new THREE.MeshStandardMaterial({ map: padTex, emissiveMap: padTex, emissive: 0x2a342a, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.45 });
-    for (let i = 0; i < 11; i++) {
-      const a = (i / 11) * Math.PI * 2 + rand(-0.3, 0.3);
-      const x = Math.cos(a) * (SKY_RX - 1.4) * rand(0.7, 1);
-      const z = Math.sin(a) * (SKY_RZ - 1.2) * rand(0.7, 1);
-      const r = rand(0.4, 0.7);
-      const pad = new THREE.Mesh(makePadGeometry(r), padM);
+    // 물가 풀
+    const tuftM = new THREE.MeshStandardMaterial({ color: 0x4f8a3e, roughness: 0.8, flatShading: true });
+    const tufts = new THREE.InstancedMesh(makeGrassTuftGeometry(), tuftM, 90);
+    for (let i = 0; i < tufts.count; i++) {
+      const a = rand(0, Math.PI * 2);
+      const sc = rand(1, 1.8);
+      m.compose(new THREE.Vector3(Math.cos(a) * (SKY_RX + rand(0.8, 1.8)), rand(0.3, 0.6), Math.sin(a) * (SKY_RZ + rand(0.8, 1.8))), new THREE.Quaternion(), new THREE.Vector3(sc, sc, sc));
+      tufts.setMatrixAt(i, m);
+    }
+    g.add(tufts);
+
+    // 연잎·연꽃: 물가 가까이
+    const padTex = [0, 1, 2].map((v) => makePadTexture(v));
+    const padMats = padTex.map((map) => new THREE.MeshStandardMaterial({ map, emissiveMap: map, emissive: 0x262e26, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.45 }));
+    for (let i = 0; i < 22; i++) {
+      const a = rand(0, Math.PI * 2);
+      const e = rand(0.72, 0.88);
+      const x = Math.cos(a) * SKY_RX * e;
+      const z = Math.sin(a) * SKY_RZ * e;
+      if (!ISLETS.every(([ix, iz]) => Math.hypot(x - ix, z - iz) > ISLET_R + 1)) continue;
+      const r = rand(0.5, 0.95);
+      const pad = new THREE.Mesh(makePadGeometry(r), padMats[i % 3]);
       pad.rotation.y = rand(0, 6);
       pad.position.set(x, 0.03, z);
       g.add(pad);
-      if (i % 2 === 0) {
-        const fl = makeLotusFlower(rand(0.8, 1.1), i % 4 === 0 ? 0xf3c6d4 : 0xf78fb0);
-        fl.position.set(x + 0.12, 0.03, z);
+      if (i % 3 === 0) {
+        const fl = makeLotusFlower(rand(0.9, 1.25), i % 2 ? 0xf3c6d4 : 0xf78fb0);
+        fl.position.set(x + 0.15, 0.03, z);
         g.add(fl);
       }
     }
-    // 은은한 금빛 기운과 구름
+
+    // 구름: 섬 아래와 둘레 (아래 연못에서는 구름 위에 떠 있는 섬으로 보이게)
     const aura = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd58a, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending }),
+      new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffe3b0, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending }),
     );
-    aura.scale.set(34, 18, 1);
-    aura.position.y = -1.5;
+    aura.scale.set(SKY_RX * 3.2, SKY_RZ * 2.4, 1);
+    aura.position.y = -4;
     g.add(aura);
     this.skyAura = aura;
     this.skyClouds = [];
-    // 섬 아래를 감싸는 구름 (아래 연못에서는 구름 위에 떠 있는 섬으로 보이게)
-    for (let i = 0; i < 22; i++) {
-      const a = (i / 22) * Math.PI * 2 + rand(-0.2, 0.2);
+    for (let i = 0; i < 30; i++) {
+      const a = (i / 30) * Math.PI * 2 + rand(-0.15, 0.15);
       const low = i % 2 === 0;
       const c = new THREE.Sprite(
-        new THREE.SpriteMaterial({ map: this.glowTex, color: low ? 0xc9d6f0 : 0xdfe8ff, transparent: true, opacity: low ? rand(0.32, 0.45) : rand(0.18, 0.28), depthWrite: false }),
+        new THREE.SpriteMaterial({ map: this.glowTex, color: low ? 0xc9d6f0 : 0xdfe8ff, transparent: true, opacity: low ? rand(0.32, 0.45) : rand(0.16, 0.26), depthWrite: false }),
       );
-      const sc = low ? rand(6, 10) : rand(5, 8);
+      const sc = (low ? rand(7, 12) : rand(6, 10)) * K * 0.8;
       c.scale.set(sc * 1.7, sc * 0.55, 1);
       const rr = low ? rand(0.3, 0.9) : 1;
-      c.position.set(Math.cos(a) * (SKY_RX * rr + rand(0.5, 2.5)), low ? rand(-4.8, -3) : rand(-2.6, -1.2), Math.sin(a) * (SKY_RZ * rr + rand(0.5, 2)));
+      c.position.set(Math.cos(a) * (SKY_RX * rr + rand(1, 4)), low ? rand(-8, -5) : rand(-4, -1.8), Math.sin(a) * (SKY_RZ * rr + rand(1, 3)));
       c.userData = { base: c.position.clone(), ph: rand(0, 6) };
       g.add(c);
       this.skyClouds.push(c);
     }
-    this.buildCloudBridge(g);
+    this.buildCloudBridge(g, rockM);
     this.scene.add(g);
   }
 
-  // 구름다리: 하늘 연못을 무지개처럼 가로지르는 몽글몽글한 구름 + 작은 등불
-  buildCloudBridge(parent) {
+  // 구름다리: 앞쪽 물 위 작은 바위섬 두 개를 무지개처럼 잇는 몽글몽글한 구름 + 난간 등불
+  buildCloudBridge(parent, rockM) {
+    // 다리 양 끝의 바위섬 (작은 소나무 대신 덤불과 석등 불빛)
+    const rockG = new THREE.DodecahedronGeometry(1, 0);
+    const bushM = new THREE.MeshStandardMaterial({ color: 0x2f5a2c, roughness: 1, flatShading: true });
+    for (const [ix, iz] of ISLETS) {
+      const isle = new THREE.Group();
+      isle.position.set(ix, 0, iz);
+      for (let k = 0; k < 9; k++) {
+        const a = rand(0, Math.PI * 2);
+        const r = rand(0, ISLET_R * 0.75);
+        const sc = rand(0.9, 1.7);
+        const rk = new THREE.Mesh(rockG, rockM);
+        rk.position.set(Math.cos(a) * r, rand(-0.6, 0.5) + (r < 1 ? 0.5 : 0), Math.sin(a) * r);
+        rk.scale.set(sc * 1.2, sc * 0.8, sc);
+        rk.rotation.set(rand(0, 3), rand(0, 3), rand(0, 3));
+        isle.add(rk);
+      }
+      // 물 아래로 이어지는 바위 기둥
+      const pillar = new THREE.Mesh(new THREE.CylinderGeometry(ISLET_R * 0.7, ISLET_R, SKY_DEPTH + 0.5, 9), rockM);
+      pillar.position.y = -SKY_DEPTH / 2 - 0.2;
+      isle.add(pillar);
+      for (let k = 0; k < 4; k++) {
+        const b = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.4, 0.7), 0), bushM);
+        b.position.set(rand(-1.2, 1.2), rand(0.9, 1.3), rand(-1.2, 1.2));
+        isle.add(b);
+      }
+      parent.add(isle);
+    }
+
     const g = new THREE.Group();
+    g.position.set(BRIDGE_X, 0, BRIDGE_Z);
     g.rotation.y = BRIDGE_ROT; // 다리 기준 좌표 (x=u, z=v)
     parent.add(g);
     const puffG = new THREE.IcosahedronGeometry(1, 1);
     const puffM = new THREE.MeshStandardMaterial({ color: 0xf4f6ff, emissive: 0x6d7aa8, emissiveIntensity: 0.45, roughness: 1, flatShading: true });
     const span = BRIDGE_SPAN;
-    const steps = 34;
-    const puffs = new THREE.InstancedMesh(puffG, puffM, steps * 4);
+    const steps = 30;
+    const puffs = new THREE.InstancedMesh(puffG, puffM, (steps + 1) * 4);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     let k = 0;
@@ -1820,36 +1941,28 @@ export class World {
       const x = -span + (i / steps) * span * 2;
       const y = bridgeY(x);
       for (let j = 0; j < 4 && k < puffs.count; j++) {
-        const sc = rand(0.45, 0.75) * (j === 0 ? 1.15 : 1);
+        const sc = rand(0.5, 0.8) * (j === 0 ? 1.15 : 1);
         q.setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3)));
-        m.compose(new THREE.Vector3(x + rand(-0.25, 0.25), y + rand(-0.12, 0.2) - (j === 3 ? 0.25 : 0), rand(-0.55, 0.55)), q, new THREE.Vector3(sc * 1.3, sc * 0.75, sc));
+        m.compose(new THREE.Vector3(x + rand(-0.25, 0.25), y + rand(-0.12, 0.2) - (j === 3 ? 0.25 : 0), rand(-0.6, 0.6)), q, new THREE.Vector3(sc * 1.3, sc * 0.75, sc));
         puffs.setMatrixAt(k++, m);
       }
     }
     puffs.count = k;
     g.add(puffs);
-    // 난간 등불: 다리 양쪽으로 금빛 작은 불
     this.bridgeLamps = [];
-    for (let i = 1; i < 8; i++) {
-      const x = -span + (i / 8) * span * 2;
+    for (let i = 1; i < 7; i++) {
+      const x = -span + (i / 7) * span * 2;
       for (const side of [-1, 1]) {
         const s = new THREE.Sprite(
           new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd58a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }),
         );
         s.scale.setScalar(0.9);
-        s.position.set(x, bridgeY(x) + 0.55, side * 0.6);
+        s.position.set(x, bridgeY(x) + 0.6, side * 0.65);
         s.userData.ph = rand(0, 6);
         g.add(s);
         this.bridgeLamps.push(s);
       }
     }
-    // 다리 아래 물에 비친 은은한 빛
-    const glow = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: this.glowTex, color: 0xcfd9ff, transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending }),
-    );
-    glow.scale.set(span * 2.2, 3, 1);
-    glow.position.set(0, 0.8, 0);
-    g.add(glow);
   }
 
   // 하늘 연못 물 위에 반짝이를 뿌리면 가까운 금빛 물고기들이 몰려옴 (p: 섬 기준 x, z)
@@ -2459,8 +2572,8 @@ export class World {
       if (d.stage === 'sky') {
         // 하늘 연못 위로 올라가 금빛 물고기가 들어가는 모습을 내려다봄
         const narrow = this.width < 720;
-        wantPos = new THREE.Vector3(SKY_X, SKY_Y + (narrow ? 11 : 8), SKY_Z + (narrow ? 15 : 12));
-        wantLook = new THREE.Vector3(SKY_X, SKY_Y - 0.4, SKY_Z + 0.4);
+        wantPos = new THREE.Vector3(SKY_X, SKY_Y + (narrow ? 10 : 7), SKY_Z + (narrow ? 14 : 11));
+        wantLook = new THREE.Vector3(SKY_X, SKY_Y - 1, SKY_Z - 3);
         rp = 1.6;
         rl = 2.4;
         if (d.t > 3.6) {
@@ -2490,7 +2603,7 @@ export class World {
   // ---------- 하늘 연못의 금빛 물고기 ----------
   // 폭포를 오른 물고기가 뛰어드는 자리 (세상 좌표)
   skyEntryPoint() {
-    return new THREE.Vector3(SKY_X, SKY_Y + 3.4, SKY_Z - 2.8); // 구름다리 뒤쪽
+    return new THREE.Vector3(SKY_X, SKY_Y + 3.4, SKY_Z - 4); // 구름다리 뒤쪽 넓은 물
   }
 
   hasSkyFish(id) {
@@ -2510,7 +2623,7 @@ export class World {
     const f = new SkyFish(this, wish);
     this.skyFish.set(f.id, f);
     if (splash) {
-      f.pos.set(rand(-1.5, 1.5), -0.3, rand(-3.6, -2.2));
+      f.pos.set(rand(-1.5, 1.5), -0.7, rand(-5, -3));
       f.root.position.copy(f.pos);
       f.pop = 1;
       const p = f.worldPos();
@@ -2617,11 +2730,12 @@ export class World {
     if (f) {
       // 고른 물고기를 가까이서 따라감
       look = f.worldPos(tmpV2.clone());
-      pos = look.clone().add(new THREE.Vector3(0, narrow ? 5 : 4, narrow ? 6.5 : 5.5));
+      pos = look.clone().add(new THREE.Vector3(0, narrow ? 6 : 4.5, narrow ? 8 : 6.5));
     } else {
       // 섬 전체를 앞쪽 위에서 비스듬히 내려다봄 (휴대폰은 조금 더 멀리)
-      look = new THREE.Vector3(SKY_X, SKY_Y + 0.4, SKY_Z - 1);
-      pos = new THREE.Vector3(SKY_X, SKY_Y + (narrow ? 8 : 5.5), SKY_Z + (narrow ? 27 : 22));
+      // 바다처럼 넓어서, 앞쪽 물가에서 구름다리 너머로 수평선까지 바라봄
+      look = new THREE.Vector3(SKY_X, SKY_Y - 0.5, SKY_Z + 1);
+      pos = new THREE.Vector3(SKY_X, SKY_Y + (narrow ? 13 : 10), SKY_Z + SKY_RZ + (narrow ? 15 : 11));
       if (!narrow) pos.x += 3;
     }
     this.camera.position.lerp(pos, 1 - Math.exp(-dt * 2.2));
@@ -2631,8 +2745,8 @@ export class World {
     if (!f && (v.arrive += dt) > 1.8) {
       const c = this.controls;
       c.target.copy(v.look);
-      c.minDistance = 6;
-      c.maxDistance = 42;
+      c.minDistance = 5;
+      c.maxDistance = 75;
       c.minPolarAngle = 0.25;
       c.maxPolarAngle = 1.32; // 둑 바위 아래로 내려가 가려지지 않게
       c.minAzimuthAngle = -Infinity;
@@ -3018,10 +3132,12 @@ export class World {
     if (under !== this.under) {
       this.under = under;
       this.scene.fog.color.set(under ? 0x0c4058 : 0x0d2340);
-      this.scene.fog.density = under ? 0.07 : 0.018;
       this.waterMat.uniforms.uUnder.value = under ? 1 : 0;
       document.body.classList.toggle('underwater', under);
     }
+    // 안개: 물속은 짙게, 하늘 연못(높은 곳)에 올라가면 옅게 — 넓은 바다 끝까지 보이게
+    const hi = Math.min(1, Math.max(0, (p.y - 9) / 7));
+    this.scene.fog.density = under ? 0.07 : 0.018 + (0.004 - 0.018) * hi;
   }
 
   // ---------- 입력 ----------
@@ -3347,7 +3463,7 @@ export class World {
     // 등용문에서 하늘 연못으로 올라가는 금빛 티끌 (위에 무언가 있다는 표시)
     if (Math.random() < dt * 2.2) {
       const from = tmpV2.set(rand(-1.2, 1.2), GATE_BASE_Y + rand(2.6, 3.4), GATE_Z - 0.3);
-      const to = new THREE.Vector3(SKY_X + rand(-2, 2), SKY_Y - 0.5, SKY_Z + SKY_RZ * 0.4);
+      const to = new THREE.Vector3(SKY_X + rand(-3, 3), SKY_Y - 3, SKY_Z + SKY_RZ * 0.85);
       const life = rand(3.5, 5);
       this.spawnParticle(from, Math.random() < 0.5 ? 0xffd27a : 0xfff3c4, to.sub(from).divideScalar(life), life, rand(0.1, 0.2), 0);
     }

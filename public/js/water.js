@@ -35,10 +35,11 @@ const SKY = `
 
 /**
  * @param {object} shared  { uTime, uRipples, uUnder } — 모든 물이 같은 값을 공유
- * @param {object} opts    { RX, RZ, FLOOR_Y, moonDir: Vector3, lamps: Vector3[], pool: boolean }
+ * @param {object} opts    { RX, RZ, FLOOR_Y, moonDir: Vector3, lamps: Vector3[], pool: boolean,
+ *                           floorFn: 바닥 높이 GLSL (없으면 아래 연못 바닥) }
  */
 export function makeWaterMaterial(shared, opts) {
-  const { RX, RZ, FLOOR_Y, moonDir, lamps, pool = false } = opts;
+  const { RX, RZ, FLOOR_Y, moonDir, lamps, pool = false, floorFn = null } = opts;
   return new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
@@ -84,7 +85,7 @@ export function makeWaterMaterial(shared, opts) {
       varying vec3 vW;
       ${NOISE}
       ${SKY}
-      ${floorGLSL(RX, RZ, FLOOR_Y)}
+      ${floorFn || floorGLSL(RX, RZ, FLOOR_Y)}
 
       // 수면 높이장: 방향이 다른 파도 여러 겹 + 잔물결 노이즈 + 물결 고리
       float height(vec2 p) {
@@ -191,7 +192,8 @@ const CAUSTIC = `
 
 // 물고기: 수면(반투명, 반사 섞임)에 덮이면 색이 뿌옇게 빠져서, 물고기는 수면 뒤에 그리고
 // 대신 물속 깊이만큼만 물빛을 살짝 입힌다 (물 위로 뛰어오르면 원래 색 그대로)
-export function addWaterTint(material, uUnder) {
+// level: 수면 높이 (하늘 연못은 하늘 높이), strength: 깊을수록 물빛이 얼마나 짙어지나
+export function addWaterTint(material, uUnder, level = 0, strength = 1) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uUnder = uUnder;
     sh.vertexShader = sh.vertexShader
@@ -203,17 +205,17 @@ export function addWaterTint(material, uUnder) {
         '#include <opaque_fragment>',
         `#include <opaque_fragment>
         {
-          float d = -vTintY;
-          float k = smoothstep(0.0, 0.25, d) * (0.1 + smoothstep(0.3, 2.6, d) * 0.14) * (1.0 - uUnder);
+          float d = ${f(level)} - vTintY;
+          float k = smoothstep(0.0, 0.25, d) * (0.1 + smoothstep(0.3, 2.6, d) * 0.14) * ${f(strength)} * (1.0 - uUnder);
           gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.02, 0.1, 0.12), k);
         }`,
       );
   };
-  material.customProgramCacheKey = () => 'fish-water-tint';
+  material.customProgramCacheKey = () => `fish-water-tint-${level}-${strength}`;
   return material;
 }
 
-export function addCaustics(material, uTime, strength = 0.5) {
+export function addCaustics(material, uTime, strength = 0.5, level = 0) {
   material.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uTime;
     sh.vertexShader = sh.vertexShader
@@ -233,8 +235,9 @@ export function addCaustics(material, uTime, strength = 0.5) {
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         {
-          float under = 1.0 - smoothstep(-0.15, 0.0, vCWorld.y);
-          float fade = 1.0 - clamp(-vCWorld.y * 0.12, 0.0, 0.5);
+          float wy = vCWorld.y - ${f(level)};
+          float under = 1.0 - smoothstep(-0.15, 0.0, wy);
+          float fade = 1.0 - clamp(-wy * 0.12, 0.0, 0.5);
           float c1 = caustic(vCWorld.xz * 0.21, uTime * 0.55);
           float c2 = caustic(vCWorld.xz * 0.21 + 0.37, uTime * 0.55 + 1.7);
           vec3 cc = vec3(c1 * 0.9, (c1 + c2) * 0.5, c2) ; // 살짝 무지갯빛으로 갈라짐
@@ -242,7 +245,7 @@ export function addCaustics(material, uTime, strength = 0.5) {
         }`,
       );
   };
-  material.customProgramCacheKey = () => `caustic-${strength}`;
+  material.customProgramCacheKey = () => `caustic-${strength}-${level}`;
   return material;
 }
 

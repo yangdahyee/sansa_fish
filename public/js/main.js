@@ -124,8 +124,26 @@ async function main() {
   function renderStats() {
     const n = (v) => Number(v || 0).toLocaleString('ko-KR');
     $('stats').textContent = `소원 ${n(stats.total)} · 이룬 소원 ${n(stats.stars)}${stats.online > 1 ? ` · 지금 ${n(stats.online)}명` : ''}`;
+    // 휴대폰은 제목줄이 숨겨지므로 접속자 수를 따로 (나 포함)
+    const pill = $('onlinePill');
+    const on = Math.max(1, stats.online || 0);
+    pill.hidden = !stats.online;
+    if ($('onlineN').textContent !== String(on)) {
+      $('onlineN').textContent = String(on);
+      pill.classList.remove('bump');
+      void pill.offsetWidth;
+      pill.classList.add('bump');
+    }
     $('goalText').textContent = GOAL;
   }
+
+  $('onlinePill').onclick = () => {
+    const names = [...online.values()].map((u) => u.name);
+    const n = Math.max(1, stats.online || 0);
+    if (names.length) toast(`🐟 지금 연못에: 나, ${names.slice(0, 6).join(', ')}${names.length > 6 ? ` 외 ${names.length - 6}명` : ''}`);
+    else if (n > 1) toast(`🐟 지금 ${n}명이 있어요 · 다른 분은 아직 연못에 들어오는 중이에요`); // 접속 수는 먼저, 이름은 조금 뒤에 옴
+    else toast('🐟 지금은 나 혼자 연못에 있어요');
+  };
 
   // ---------- 영화 같은 장면 (별이 될 때) ----------
   let cinemaTimer = null;
