@@ -148,9 +148,25 @@ const server = http.createServer((req, res) => {
     const f = safeJoin(THREE_DIR, p.slice('/vendor/three/'.length));
     return f ? serveFile(res, f) : (res.writeHead(400), res.end());
   }
-  const f = safeJoin(PUBLIC_DIR, p === '/' ? 'index.html' : p.slice(1));
+  if (p === '/' || p === '/index.html') return serveIndex(req, res);
+  const f = safeJoin(PUBLIC_DIR, p.slice(1));
   return f ? serveFile(res, f) : (res.writeHead(400), res.end());
 });
+
+// 메인 페이지: og:image·og:url 상대 주소를 접속한 도메인 기준 절대 주소로 (공유 미리보기용)
+function serveIndex(req, res) {
+  fs.readFile(path.join(PUBLIC_DIR, 'index.html'), 'utf8', (err, html) => {
+    if (err) return res.writeHead(500), res.end();
+    const proto = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() || 'http';
+    const origin = `${proto}://${req.headers['x-forwarded-host'] || req.headers.host}`;
+    const out = html.replace(
+      /(<meta (?:property="og:(?:url|image)"|name="twitter:image") content=")\//g,
+      `$1${origin}/`,
+    );
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
+    res.end(out);
+  });
+}
 
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 });
 wss.on('connection', (ws) => {

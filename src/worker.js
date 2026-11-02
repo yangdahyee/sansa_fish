@@ -12,7 +12,19 @@ export default {
       const stub = env.POND.get(env.POND.idFromName('main'));
       return stub.fetch(request);
     }
-    return env.ASSETS.fetch(request);
+    const res = await env.ASSETS.fetch(request);
+    // 메인 페이지: og:image·og:url 같은 상대 주소를 접속한 도메인 기준 절대 주소로 (카카오톡·페이스북 미리보기용)
+    if ((res.headers.get('content-type') || '').includes('text/html')) {
+      return new HTMLRewriter()
+        .on('meta[property="og:url"], meta[property="og:image"], meta[name="twitter:image"]', {
+          element(el) {
+            const v = el.getAttribute('content');
+            if (v && v.startsWith('/')) el.setAttribute('content', url.origin + v);
+          },
+        })
+        .transform(res);
+    }
+    return res;
   },
 };
 
