@@ -215,6 +215,66 @@ function makeGlowTexture() {
 }
 
 // ======================================================================
+// 말풍선: 물고기를 매끄럽게 따라가고 (픽셀 단위로 툭툭 끊기지 않게 GPU 이동 + 살짝 늦게 따라감),
+// 나타날 땐 톡, 사라질 땐 스르르. 화면 가장자리에선 안으로 밀고 꼬리는 물고기를 가리킴
+// ======================================================================
+class Bubble {
+  constructor(world, text, cls = '') {
+    this.world = world;
+    this.el = document.createElement('div');
+    this.el.className = 'bubble';
+    this.inner = document.createElement('div');
+    this.inner.className = `say ${cls}`.trim();
+    this.inner.textContent = text;
+    this.el.appendChild(this.inner);
+    world.labels.appendChild(this.el);
+    this.x = null;
+    this.y = null;
+    this.shown = true;
+    this.below = false;
+  }
+
+  // (sx, sy): 꼬리가 가리킬 화면 위치. flip: 위쪽 메뉴에 가리면 아래로 뒤집기, floor: 이 아래로는 내려가지 않음
+  place(sx, sy, dt, { visible = true, flip = false, floor = Infinity } = {}) {
+    const W = this.world.width;
+    const bw = this.inner.offsetWidth || 0;
+    const bh = this.inner.offsetHeight || 0;
+    const cx = bw ? clamp(sx, bw / 2 + 12, W - bw / 2 - 12) : sx;
+    const below = flip && sy - bh - 10 < 64;
+    const ty = below ? sy + 46 : Math.min(sy, floor - 8);
+    if (this.x === null || !this.shown || Math.hypot(cx - this.x, ty - this.y) > 220) {
+      this.x = cx; // 처음이거나 크게 건너뛰면 바로 그 자리로
+      this.y = ty;
+    } else {
+      const k = 1 - Math.exp(-Math.min(dt, 0.1) * 20);
+      this.x += (cx - this.x) * k;
+      this.y += (ty - this.y) * k;
+    }
+    this.el.style.transform = `translate3d(${this.x.toFixed(2)}px, ${this.y.toFixed(2)}px, 0)`;
+    if (below !== this.below) {
+      this.below = below;
+      this.inner.classList.toggle('below', below);
+    }
+    this.inner.style.setProperty('--tip', `${bw ? clamp(50 + ((sx - this.x) / bw) * 100, 12, 88) : 50}%`);
+    if (visible !== this.shown) {
+      this.shown = visible;
+      this.el.classList.toggle('hide', !visible);
+    }
+  }
+
+  close() {
+    if (this.closing) return;
+    this.closing = true;
+    this.el.classList.add('out');
+    setTimeout(() => this.el.remove(), 260);
+  }
+
+  remove() {
+    this.el.remove();
+  }
+}
+
+// ======================================================================
 // 물고기 한 마리
 // ======================================================================
 class Fish {
@@ -411,16 +471,13 @@ class Fish {
   }
 
   say(text, cls = '') {
-    this.sayEl?.remove();
-    const el = document.createElement('div');
-    el.className = `say ${cls}`.trim();
-    el.textContent = text;
-    this.world.labels.appendChild(el);
-    this.sayEl = el;
+    this.bubble?.close(); // 앞 말은 스르르 사라지고 새 말이 톡
+    const b = new Bubble(this.world, text, cls);
+    this.bubble = b;
     clearTimeout(this.sayTimer);
     this.sayTimer = setTimeout(() => {
-      el.remove();
-      if (this.sayEl === el) this.sayEl = null;
+      b.close();
+      if (this.bubble === b) this.bubble = null;
     }, 3800);
   }
 
@@ -468,7 +525,7 @@ class Fish {
   dispose() {
     this.world.scene.remove(this.root);
     this.tag?.remove();
-    this.sayEl?.remove();
+    this.bubble?.remove();
     this.mixer?.stopAllAction();
   }
 
@@ -526,24 +583,25 @@ class Fish {
 
     // 이름표·말풍선 위치
     const show = !eyeView && (!this.action || this.action.type === 'leap');
-    if (this.tag || this.sayEl) {
+    if (this.tag || this.bubble) {
       tmpV2.copy(this.pos);
       tmpV2.y += 0.75 * this.scaleNow + 0.2;
       tmpV2.project(w.camera);
       const visible = tmpV2.z < 1 && Math.abs(tmpV2.x) < 1.1 && Math.abs(tmpV2.y) < 1.1;
       const sx = (tmpV2.x * 0.5 + 0.5) * w.width;
       const sy = (-tmpV2.y * 0.5 + 0.5) * w.height;
+      let tagH = 0;
       if (this.tag) {
-        // 이름표: 나, 지금 접속한 사람, 카드를 연 물고기
-        this.tag.style.display = visible && show && w.showTags && !w.skyView && (this.isMe || this.data.online || this.data.highlight) ? '' : 'none';
-        this.tag.style.left = `${sx}px`;
-        this.tag.style.top = `${sy}px`;
+        // 이름표: 나, 지금 접속한 사람, 카드를 연 물고기 (픽셀 단위로 끊기지 않게 transform 으로)
+        const on = visible && show && w.showTags && !w.skyView && (this.isMe || this.data.online || this.data.highlight);
+        this.tag.style.display = on ? '' : 'none';
+        if (on) {
+          this.tag.style.transform = `translate3d(${sx.toFixed(2)}px, ${sy.toFixed(2)}px, 0) translate(-50%, -100%)`;
+          tagH = this.tag.offsetHeight + 6;
+        }
       }
-      if (this.sayEl) {
-        this.sayEl.style.display = visible && !eyeView ? '' : 'none';
-        this.sayEl.style.left = `${sx}px`;
-        this.sayEl.style.top = `${sy - 24}px`;
-      }
+      // 말풍선: 이름표가 있으면 그 위에, 없으면 물고기 바로 위에
+      this.bubble?.place(sx, sy - tagH - 2, dt, { visible: visible && !eyeView && !w.skyView });
     }
   }
 
@@ -1187,27 +1245,24 @@ class SkyFish {
   // 소원 제목을 말풍선으로 (한 번에 하나만 — 전에 누른 물고기 말풍선은 닫음)
   say(text) {
     for (const o of this.world.skyFish.values()) {
-      if (o === this || !o.sayEl) continue;
-      o.sayEl.remove();
-      o.sayEl = null;
+      if (o === this || !o.bubble) continue;
+      o.bubble.close();
+      o.bubble = null;
     }
-    this.sayEl?.remove();
-    const el = document.createElement('div');
-    el.className = 'say sky';
-    el.textContent = text;
-    this.world.labels.appendChild(el);
-    this.sayEl = el;
+    this.bubble?.close();
+    const b = new Bubble(this.world, text, 'sky');
+    this.bubble = b;
     this.pop = 1;
     clearTimeout(this.sayTimer);
     this.sayTimer = setTimeout(() => {
-      el.remove();
-      if (this.sayEl === el) this.sayEl = null;
+      b.close();
+      if (this.bubble === b) this.bubble = null;
     }, 9000); // 긴 소원도 읽을 수 있게
   }
 
   dispose() {
     this.world.skyPond.remove(this.root);
-    this.sayEl?.remove();
+    this.bubble?.remove();
     this.mixer.stopAllAction();
   }
 
@@ -1312,7 +1367,7 @@ class SkyFish {
       // 왕관이 가끔 반짝
       if (Math.random() < dt * 0.5) this.world.spawnParticle(this.crown.getWorldPosition(tmpV2), 0xfff3c4, new THREE.Vector3(0, 0.4, 0), 0.6, 0.18, 0);
     }
-    this.updateSay();
+    this.updateSay(dt);
   }
 
   updateLeap(dt, time, animate) {
@@ -1341,7 +1396,7 @@ class SkyFish {
         this.world.sfx?.plop();
       }
       this.root.position.copy(this.pos);
-      this.updateSay();
+      this.updateSay(dt);
       return;
     }
     this.root.position.copy(this.pos);
@@ -1360,7 +1415,7 @@ class SkyFish {
         this.world.splash(p, 0.7, false);
       }
     }
-    this.updateSay();
+    this.updateSay(dt);
   }
 
   // 다리에 부딪힌 뒤: 중력으로 떨어져 물에 퐁당
@@ -1388,34 +1443,23 @@ class SkyFish {
         this.world.splash(p, 0.7, false);
       }
     }
-    this.updateSay();
+    this.updateSay(dt);
   }
 
-  updateSay() {
-    if (this.sayEl) {
-      this.worldPos(tmpV2);
-      tmpV2.y += 0.9;
-      tmpV2.project(this.world.camera);
-      const visible = tmpV2.z < 1 && Math.abs(tmpV2.x) < 1.1 && Math.abs(tmpV2.y) < 1.1;
-      const el = this.sayEl;
-      el.style.display = visible && this.world.skyView && !this.world.skyView.returning ? '' : 'none';
-      // 말풍선이 화면 밖으로 잘리지 않게: 좌우는 화면 안으로 밀고(꼬리는 물고기를 가리킴),
-      // 위쪽 메뉴에 가리면 물고기 아래로 뒤집음
-      const W = this.world.width;
-      const fx = (tmpV2.x * 0.5 + 0.5) * W;
-      const fy = (-tmpV2.y * 0.5 + 0.5) * this.world.height;
-      const bw = el.offsetWidth || 0;
-      const bh = el.offsetHeight || 0;
-      const pad = 12;
-      const cx = bw ? clamp(fx, bw / 2 + pad, W - bw / 2 - pad) : fx;
-      const below = fy - bh - 10 < 64;
-      el.classList.toggle('below', below);
-      el.style.left = `${cx}px`;
-      // 아래쪽 소원 카드에 가리면 카드 바로 위로 (말풍선 아래 끝 = top)
-      const floor = this.world.bubbleFloor?.() ?? this.world.height;
-      el.style.top = `${below ? fy + 46 : Math.min(fy, floor - 8)}px`;
-      el.style.setProperty('--tip', `${bw ? clamp(50 + ((fx - cx) / bw) * 100, 10, 90) : 50}%`);
-    }
+  updateSay(dt) {
+    if (!this.bubble) return;
+    this.worldPos(tmpV2);
+    tmpV2.y += 0.9;
+    tmpV2.project(this.world.camera);
+    const visible = tmpV2.z < 1 && Math.abs(tmpV2.x) < 1.1 && Math.abs(tmpV2.y) < 1.1;
+    const fx = (tmpV2.x * 0.5 + 0.5) * this.world.width;
+    const fy = (-tmpV2.y * 0.5 + 0.5) * this.world.height;
+    // 위쪽 메뉴에 가리면 물고기 아래로, 아래쪽 소원 카드에 가리면 카드 바로 위로
+    this.bubble.place(fx, fy, dt, {
+      visible: visible && !!this.world.skyView && !this.world.skyView.returning,
+      flip: true,
+      floor: this.world.bubbleFloor?.() ?? this.world.height,
+    });
   }
 }
 
@@ -3213,7 +3257,7 @@ export class World {
     // 너무 많으면 오래된 소원부터 잠시 쉬러 감
     if (this.skyFish.size >= SKY_MAX) {
       const old = [...this.skyFish.values()]
-        .filter((f) => !f.sayEl && f.id !== this.skyView?.focusId)
+        .filter((f) => !f.bubble && f.id !== this.skyView?.focusId)
         .sort((a, b) => (a.data.starAt || 0) - (b.data.starAt || 0))[0];
       if (old) this.removeSkyFish(old.id);
     }

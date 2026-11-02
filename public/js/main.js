@@ -749,17 +749,28 @@ async function main() {
   function showSay(on) {
     if (on) sayTarget = $('wishCard').hidden ? null : cardPid();
     document.body.classList.toggle('say-open', on);
-    $('sayPop').hidden = !on;
+    const pop = $('sayPop');
+    clearTimeout(showSay.t);
+    pop.classList.remove('closing');
+    if (on) pop.hidden = false;
+    else if (!pop.hidden) {
+      // 닫을 때도 스르르
+      pop.classList.add('closing');
+      showSay.t = setTimeout(() => {
+        pop.hidden = true;
+        pop.classList.remove('closing');
+      }, 160);
+    }
     $('actSay').classList.toggle('on', on);
     $('actSay').setAttribute('aria-expanded', String(on));
     if (on) renderSayTo();
   }
   $('actSay').onclick = (e) => {
     e.stopPropagation();
-    showSay($('sayPop').hidden);
+    showSay(!document.body.classList.contains('say-open'));
   };
   document.addEventListener('pointerdown', (e) => {
-    if (!$('sayPop').hidden && !e.target.closest('#sayPop, #actSay')) showSay(false);
+    if (document.body.classList.contains('say-open') && !e.target.closest('#sayPop, #actSay')) showSay(false);
   });
   document.addEventListener('keydown', (e) => e.key === 'Escape' && showSay(false));
 
