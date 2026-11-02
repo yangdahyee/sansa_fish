@@ -142,7 +142,7 @@ input:not([type]):focus { border-color: rgba(255, 207, 107, .6); }
   box-shadow: 0 20px 50px rgba(0,0,0,.35); animation: rise .25s ease-out;
 }
 .fish-card .close { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0; background: none; font-size: 18px; }
-.fish-card .dream-text { font-size: 16px; }
+.fish-card .dream-text { font-size: 20px; line-height: 1.35; margin: 2px 0 12px; color: #fdfaf2; }
 .card-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 /* 글자가 한 글자씩 끊기지 않게: 버튼 글은 한 줄로, 자리가 모자라면 버튼이 다음 줄로 */
 .card-actions button { flex: 1 1 auto; white-space: nowrap; word-break: keep-all; }
@@ -610,3 +610,18 @@ body.card-open .caption { opacity: 0 !important; }
 /* 말 고르기 창: 닫힐 때도 스르르 */
 .say-pop.closing { animation: popDown .16s ease-in forwards; }
 @keyframes popDown { to { opacity: 0; transform: translate(-50%, 8px); } }
+
+/* ---------- 소원 카드 위계: 배지·누구(작게) → 소원 글(크게) → 정보 → 버튼 ---------- */
+.card-head { display: flex; align-items: center; gap: 8px; margin: 0 30px 8px 0; min-width: 0; }
+.card-badge { flex: none; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 99px; letter-spacing: .01em; border: 1px solid transparent; }
+.card-badge.gold { color: var(--gold); background: rgba(255, 207, 107, .14); border-color: rgba(255, 207, 107, .35); }
+.card-badge.swim { color: #a8defc; background: rgba(111, 208, 255, .12); border-color: rgba(111, 208, 255, .25); }
+.card-badge.live { color: #93e8b1; background: rgba(127, 227, 160, .12); border-color: rgba(127, 227, 160, .3); }
+.card-who { font-size: 12px; color: var(--ink-dim); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -2px; }
+.card-meta .chip { font-size: 11.5px; padding: 4px 9px; border-radius: 99px; background: rgba(255, 255, 255, .06); color: var(--ink-dim); white-space: nowrap; }
+.fish-card.is-star .card-meta .chip { background: rgba(255, 207, 107, .08); color: #e8d6ad; }
+.card-meta .report { margin-left: auto; flex: none; background: none; color: var(--ink-dim); font-size: 12px; padding: 4px 4px; }
+.card-meta .report:hover { color: var(--coral); }
+/* 정보 칩 줄로 신고가 옮겨 가 버튼 줄이 비면 자리를 차지하지 않게 */
+.card-actions:not(:has(> button:not([hidden]))) { display: none; }

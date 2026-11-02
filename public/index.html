@@ -118,13 +118,16 @@
   <!-- 소원 카드 (물고기를 눌렀을 때) -->
   <div id="wishCard" class="fish-card" hidden>
     <button class="close" id="cardClose" aria-label="닫기">×</button>
-    <p class="fish-name" id="cardName"></p>
+    <!-- 위계: 상태 배지 + 누구의 소원(작게) → 소원 글(가장 크게) → 진행/정보 → 버튼 -->
+    <div class="card-head"><span id="cardBadge" class="card-badge"></span><span id="cardName" class="card-who"></span></div>
     <p class="dream-text" id="cardText"></p>
     <div class="falls small" id="cardFalls">
       <div class="falls-bar"><div id="cardFill" class="falls-fill"></div></div>
       <p id="cardLabel" class="falls-label"></p>
     </div>
-    <div class="card-actions">
+    <!-- 이루어진 소원: 가득 찬 막대 대신 작은 정보 칩 (+ 신고·지우기를 같은 줄 끝에) -->
+    <div class="card-meta" id="cardMeta" hidden></div>
+    <div class="card-actions" id="cardActions">
       <button id="btnFeed" class="primary small">✨ 먹이 주기</button>
       <button id="btnReport" class="small report" title="욕설·광고·개인정보 등">🚩 신고</button>
       <button id="btnDelete" class="small report" hidden title="내 소원 지우기">🗑 지우기</button>

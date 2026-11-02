@@ -88,6 +88,9 @@ function celebrate({ title, dream, meta = '' }) {
 }
 
 const fmtDate = (t) => new Date(t).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+// 올해면 연도 없이 짧게 (11월 1일)
+const fmtShort = (t) =>
+  new Date(t).toLocaleDateString('ko-KR', new Date(t).getFullYear() === new Date().getFullYear() ? { month: 'long', day: 'numeric' } : { year: 'numeric', month: 'long', day: 'numeric' });
 const wishLine = (w) => (w.text ? `“${w.text}”` : '🔒 마음속에 간직한 소원');
 
 // 3D 연못에 넘길 물고기 정보
@@ -500,12 +503,14 @@ async function main() {
     $('wishCard').hidden = false;
     document.body.classList.add('card-open'); // 안내 문구가 카드 위에 겹치지 않게
     $('wishCard').classList.toggle('is-star', star);
-    $('cardName').textContent = `${star ? '✦ 이루어진 소원' : SPECIES[w.species]?.label || ''} · ${w.name}${w.mine ? ' (나)' : ''}`;
+    const who = `${w.name}${w.mine ? ' (나)' : ''}`;
+    setCardHead(star ? '✦ 이루어진 소원' : '🐟 헤엄치는 소원', star ? 'gold' : 'swim', star ? `${who} 님의 소원` : `${who} · ${SPECIES[w.species]?.label || ''}`);
     $('cardText').textContent = wishLine(w);
     $('cardFill').style.width = `${Math.min(100, (w.feeds / GOAL) * 100)}%`;
-    $('cardLabel').textContent = star
-      ? `먹이 ${w.feeds}번으로 ${fmtDate(w.starAt)}에 이루어져 하늘 연못에서 헤엄쳐요`
-      : `✨ 먹이 ${w.feeds} / ${GOAL}${w.feeders ? ` · ${w.feeders}명이 응원` : ''}`;
+    $('cardLabel').textContent = `✨ 먹이 ${w.feeds} / ${GOAL}${w.feeders ? ` · ${w.feeders}명이 응원` : ''}`;
+    // 이루어진 소원은 막대 대신 정보 칩
+    $('cardFalls').hidden = star;
+    setCardMeta(star ? [`🗓 ${fmtShort(w.starAt)} 이루어짐`, `✨ 먹이 ${w.feeds}번`, w.feeders ? `💛 ${w.feeders}명이 함께` : null] : null);
     const b = $('btnFeed');
     b.hidden = star;
     b.disabled = false;
@@ -521,6 +526,27 @@ async function main() {
     world.getFish(w.id)?.setData({ highlight: true });
     renderFollowBtn();
   }
+  function setCardHead(badge, kind, who) {
+    $('cardBadge').textContent = badge;
+    $('cardBadge').className = `card-badge ${kind}`;
+    $('cardName').textContent = who;
+  }
+  // 정보 칩 줄: 있으면 신고·지우기도 이 줄 끝으로 (아래 빈 줄이 생기지 않게), 없으면 버튼 줄로 되돌림
+  function setCardMeta(chips) {
+    const meta = $('cardMeta');
+    meta.textContent = '';
+    meta.hidden = !chips;
+    const home = chips ? meta : $('cardActions');
+    if (chips) {
+      for (const c of chips.filter(Boolean)) {
+        const el = document.createElement('span');
+        el.className = 'chip';
+        el.textContent = c;
+        meta.appendChild(el);
+      }
+    }
+    home.append($('btnReport'), $('btnDelete'));
+  }
   // 아직 소원이 없는, 지금 접속한 사람의 물고기 카드
   function openPresenceCard(u, f) {
     closeCard();
@@ -529,7 +555,8 @@ async function main() {
     $('wishCard').hidden = false;
     document.body.classList.add('card-open');
     $('wishCard').classList.remove('is-star');
-    $('cardName').textContent = `● 지금 연못에 있어요 · ${u.name}`;
+    setCardHead('● 지금 연못에', 'live', u.name);
+    setCardMeta(null);
     $('cardText').textContent = '아직 소원을 빌지 않은 물고기예요';
     $('cardFalls').hidden = true;
     $('btnFeed').hidden = true;
