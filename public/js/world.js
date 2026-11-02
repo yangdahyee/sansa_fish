@@ -334,11 +334,13 @@ class Fish {
   }
 
   // 먹이(응원)를 받을수록 금빛으로 은은하게 빛남
+  // 먹이를 받을수록: 금빛을 덧칠하면 색이 바래 보여서, 자기 색으로 아주 살짝만 밝히고
+  // 금빛은 몸 주위에 피어오르는 반짝이로 (update 에서)
   applyGlow() {
     if (!this.model || this.action?.type === 'ascend') return;
-    const g = this.isNpc ? 0 : Math.min(1, this.progress) * 0.32;
+    const g = this.isNpc ? 0 : Math.min(1, this.progress) * 0.12;
     this.model.traverse((o) => {
-      if (o.isMesh && o.material.emissive) o.material.emissive.setRGB(1, 0.72, 0.3).multiplyScalar(g);
+      if (o.isMesh && o.material.emissive) o.material.emissive.copy(o.material.color).multiplyScalar(g);
     });
   }
 
@@ -479,6 +481,17 @@ class Fish {
 
     this.animNow += (this.animRate - this.animNow) * Math.min(1, dt * 5);
     this.mixer?.update(dt * this.animNow);
+    // 먹이를 받은 만큼 금빛 반짝이가 가끔 피어오름
+    if (!this.isNpc && !this.action && this.progress > 0 && Math.random() < dt * this.progress * 1.6) {
+      w.spawnParticle(
+        tmpV2.set(this.pos.x + rand(-0.4, 0.4), this.pos.y + rand(-0.1, 0.3), this.pos.z + rand(-0.4, 0.4)),
+        Math.random() < 0.6 ? 0xffd27a : 0xfff3c4,
+        new THREE.Vector3(rand(-0.1, 0.1), rand(0.3, 0.6), rand(-0.1, 0.1)),
+        rand(0.9, 1.4),
+        rand(0.1, 0.18),
+        0.2,
+      );
+    }
 
     // 크기
     this.scaleNow += (this.targetScale - this.scaleNow) * Math.min(1, dt * 2);

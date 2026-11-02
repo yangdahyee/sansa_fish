@@ -143,8 +143,12 @@ input:not([type]):focus { border-color: rgba(255, 207, 107, .6); }
 }
 .fish-card .close { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; padding: 0; background: none; font-size: 18px; }
 .fish-card .dream-text { font-size: 16px; }
-.card-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.card-actions button { flex: 1; }
+.card-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* 글자가 한 글자씩 끊기지 않게: 버튼 글은 한 줄로, 자리가 모자라면 버튼이 다음 줄로 */
+.card-actions button { flex: 1 1 auto; white-space: nowrap; word-break: keep-all; }
+.card-actions #btnFeed { flex-basis: 100%; order: 0; }          /* 먹이 주기는 첫 줄 가득 */
+.card-actions #btnCheerTo, .card-actions #btnFollow { order: 1; flex: 1 1 0; min-width: max-content; }
+.card-actions .report { order: 2; margin-left: auto; }          /* 신고·지우기는 끝에 작게 */
 @keyframes rise { from { transform: translateY(12px); opacity: 0; } }
 
 /* ---------- 시점 전환 ---------- */
