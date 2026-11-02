@@ -498,6 +498,7 @@ async function main() {
     cardId = w.id;
     const star = w.status === 'star';
     $('wishCard').hidden = false;
+    document.body.classList.add('card-open'); // 안내 문구가 카드 위에 겹치지 않게
     $('wishCard').classList.toggle('is-star', star);
     $('cardName').textContent = `${star ? '✦ 이루어진 소원' : SPECIES[w.species]?.label || ''} · ${w.name}${w.mine ? ' (나)' : ''}`;
     $('cardText').textContent = wishLine(w);
@@ -526,6 +527,7 @@ async function main() {
     if (mobile()) openPanel(false);
     cardId = null;
     $('wishCard').hidden = false;
+    document.body.classList.add('card-open');
     $('wishCard').classList.remove('is-star');
     $('cardName').textContent = `● 지금 연못에 있어요 · ${u.name}`;
     $('cardText').textContent = '아직 소원을 빌지 않은 물고기예요';
@@ -550,6 +552,7 @@ async function main() {
     if (cardId) world.getFish(cardId)?.setData({ highlight: false });
     cardId = null;
     $('wishCard').hidden = true;
+    document.body.classList.remove('card-open');
   }
   $('cardClose').onclick = closeCard;
 
@@ -581,6 +584,9 @@ async function main() {
     lastGoto = now;
     live.send({ t: 'emote', kind: 'goto', p: [p.x, p.y, p.z].map((v) => Math.round(v * 100) / 100) });
   };
+  // 하늘 연못 말풍선이 소원 카드에 가리지 않게: 카드가 열려 있으면 카드 윗변까지만
+  world.bubbleFloor = () => ($('wishCard').hidden ? window.innerHeight : $('wishCard').getBoundingClientRect().top);
+
   // 하늘 연못 빈 물을 누르면 반짝이 → 다른 사람 화면에도
   let lastSkyTap = 0;
   world.onSkyTap = (x, z) => {

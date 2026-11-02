@@ -1120,8 +1120,13 @@ class SkyFish {
     return out.copy(this.pos).add(this.world.skyPond.position);
   }
 
-  // 소원 제목을 말풍선으로
+  // 소원 제목을 말풍선으로 (한 번에 하나만 — 전에 누른 물고기 말풍선은 닫음)
   say(text) {
+    for (const o of this.world.skyFish.values()) {
+      if (o === this || !o.sayEl) continue;
+      o.sayEl.remove();
+      o.sayEl = null;
+    }
     this.sayEl?.remove();
     const el = document.createElement('div');
     el.className = 'say sky';
@@ -1294,7 +1299,9 @@ class SkyFish {
       const below = fy - bh - 10 < 64;
       el.classList.toggle('below', below);
       el.style.left = `${cx}px`;
-      el.style.top = `${below ? fy + 46 : fy}px`;
+      // 아래쪽 소원 카드에 가리면 카드 바로 위로 (말풍선 아래 끝 = top)
+      const floor = this.world.bubbleFloor?.() ?? this.world.height;
+      el.style.top = `${below ? fy + 46 : Math.min(fy, floor - 8)}px`;
       el.style.setProperty('--tip', `${bw ? clamp(50 + ((fx - cx) / bw) * 100, 10, 90) : 50}%`);
     }
   }

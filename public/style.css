@@ -103,7 +103,7 @@ input:not([type]):focus { border-color: rgba(255, 207, 107, .6); }
 .falls { margin: 4px 0 14px; }
 .falls-bar { height: 10px; border-radius: 99px; background: rgba(255,255,255,.08); overflow: hidden; }
 .falls-fill { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, #6fd0ff, var(--gold)); transition: width .8s cubic-bezier(.2,.9,.2,1); }
-.falls-label { margin: 6px 0 0; font-size: 12px; color: var(--ink-dim); }
+.falls-label { margin: 6px 0 0; font-size: 12px; color: var(--ink-dim); word-break: keep-all; }
 
 .todo-list { list-style: none; margin: 0 0 12px; padding: 0; }
 .todo-list li {
@@ -589,3 +589,8 @@ body.sky-view #panel { transition: opacity .3s; }
   background: linear-gradient(135deg, rgba(255, 210, 122, .16), rgba(255, 154, 107, .1)); border: 1px solid rgba(255, 210, 122, .35); color: var(--gold);
 }
 .my-stars-btn:hover { background: linear-gradient(135deg, rgba(255, 210, 122, .26), rgba(255, 154, 107, .16)); }
+
+/* 하늘 연못: 안내 문구는 위쪽에 (아래 소원 카드와 겹치지 않게), 카드가 열리면 숨김 */
+body.sky-view .caption { top: calc(env(safe-area-inset-top, 0px) + 72px); bottom: auto; word-break: keep-all; }
+body.card-open .caption { opacity: 0 !important; }
+.caption { word-break: keep-all; }
