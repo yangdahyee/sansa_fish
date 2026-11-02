@@ -63,6 +63,16 @@ const fromBridge = (u, v) => [BRIDGE_X + u * Math.cos(BRIDGE_ROT) + v * Math.sin
 // 다리 위 높이 (u 에 따라 무지개처럼 휨)
 const bridgeY = (u) => 0.9 + BRIDGE_H * Math.max(0, 1 - (u / BRIDGE_SPAN) ** 2);
 const ISLETS = [fromBridge(-BRIDGE_SPAN, 0), fromBridge(BRIDGE_SPAN, 0)];
+const BRIDGE_W = 1.8; // 다리 폭
+const BRIDGE_TOP = 0.95; // 다리 바닥판 위로 난간 꼭대기까지
+const BRIDGE_UNDER = 1.0; // 다리 바닥판 아래로 받치는 구름 끝까지
+// 공(중심 p, 반지름 r, 섬 기준 좌표)이 구름다리(바닥판·난간·아래 구름)에 닿았나
+function hitsBridge(p, r) {
+  const [u, v] = toBridge(p.x, p.z);
+  if (Math.abs(u) > BRIDGE_SPAN + r || Math.abs(v) > BRIDGE_W / 2 + 0.25 + r) return false;
+  const y = bridgeY(clamp(u, -BRIDGE_SPAN, BRIDGE_SPAN));
+  return p.y + r > y - BRIDGE_UNDER && p.y - r < y + BRIDGE_TOP;
+}
 // 한 번에 헤엄치는 물고기 수 (오래된 소원부터 쉬러 감 — 목록·내 소원에서 부르면 다시 나옴)
 const SKY_MAX = /Mobi|Android/i.test(globalThis.navigator?.userAgent || '') ? 24 : 40;
 
@@ -1107,12 +1117,50 @@ class SkyFish {
     this.vel = new THREE.Vector3(rand(-1, 1), 0, rand(-1, 1)).setLength(0.4);
     this.speed = rand(0.7, 1.3);
     this.scaleNow = 1.6;
+    this.baseR = src.radius; // 몸통 반지름 (크기 1 기준)
     this.pop = 0; // 눌렸을 때 반짝 커짐
     this.leap = null; // 물 위로 뛰어오르기 (가끔 구름다리를 넘음)
     this.nextLeap = rand(6, 30);
     this.lure = null; // 반짝이를 뿌린 자리로 몰려감
     this.root.position.copy(this.pos);
     world.skyPond.add(this.root);
+  }
+
+  // 몸통을 캡슐로 봄 (아래 연못 물고기와 같은 방식)
+  get radius() {
+    return this.baseR * this.scaleNow;
+  }
+
+  get halfLen() {
+    return FISH_LEN * 0.3 * this.scaleNow;
+  }
+
+  bodyDir(out) {
+    const y = this.root.rotation.y;
+    const x = this.root.rotation.x;
+    return out.set(Math.sin(y) * Math.cos(x), -Math.sin(x), Math.cos(y) * Math.cos(x));
+  }
+
+  // 물속에서 지켜야 할 자리: 물가 안쪽, 바위섬 밖, 바닥과 수면 사이
+  constrain() {
+    if (!insideSky(this.pos.x, this.pos.z, 1)) {
+      this.pos.x *= 0.995;
+      this.pos.z *= 0.995;
+      if (!insideSky(this.target.x, this.target.z)) this.target = randomSkyPoint();
+    }
+    for (const [ix, iz] of ISLETS) {
+      const dx = this.pos.x - ix;
+      const dz = this.pos.z - iz;
+      const d = Math.hypot(dx, dz);
+      const min = ISLET_R + this.radius + 0.1;
+      if (d < min) {
+        const k = d > 1e-4 ? min / d : 1;
+        this.pos.x = ix + (d > 1e-4 ? dx : 1) * k;
+        this.pos.z = iz + (d > 1e-4 ? dz : 0) * k;
+      }
+    }
+    const lo = Math.max(-SKY_DEPTH + 0.4, skyFloor(this.pos.x, this.pos.z) + 0.45);
+    this.pos.y = clamp(this.pos.y, Math.min(lo, -0.5), -0.5);
   }
 
   // 하늘 연못 기준 위치 → 세상 위치
@@ -1159,10 +1207,20 @@ class SkyFish {
     let to;
     let h = rand(1.6, 2.4);
     const [u, v] = toBridge(from.x, from.z);
-    if (Math.abs(v) < 3 && Math.abs(u) < BRIDGE_SPAN - 3) {
-      const [tx, tz] = fromBridge(u + rand(-1, 1), (v > 0 ? -1 : 1) * rand(2.2, 3));
+    const zone = BRIDGE_W / 2 + 0.25 + this.radius; // 이 폭 안에서는 다리보다 높이 있어야 함
+    if (Math.abs(v) > zone + 0.3 && Math.abs(v) < zone + 2.2 && Math.abs(u) < BRIDGE_SPAN - 3) {
+      // 다리 넘기: 다리 폭 전체를 지나는 동안 난간 꼭대기 + 몸 + 여유보다 높게 포물선을 잡음
+      const v1 = (v > 0 ? -1 : 1) * rand(zone + 0.6, zone + 1.6);
+      const u1 = u + rand(-1, 1);
+      const [tx, tz] = fromBridge(u1, v1);
       to = new THREE.Vector3(tx, -0.6, tz);
-      h = bridgeY(u) + 1.1; // 다리 위를 넘을 만큼
+      const total = Math.abs(v) + Math.abs(v1);
+      const top = Math.max(bridgeY(u), bridgeY(u1)) + BRIDGE_TOP + this.radius + 0.3;
+      h = 0;
+      for (const tc of [(Math.abs(v) - zone) / total, Math.abs(v) / total, (Math.abs(v) + zone) / total]) {
+        const base = from.y + (to.y - from.y) * tc;
+        h = Math.max(h, (top - base) / Math.sin(tc * Math.PI) - 0.4);
+      }
     } else {
       const dir = this.vel.lengthSq() > 1e-4 ? this.vel.clone().setY(0).normalize() : new THREE.Vector3(1, 0, 0);
       to = from.clone().addScaledVector(dir, rand(2.5, 4));
@@ -1221,15 +1279,8 @@ class SkyFish {
     }
     this.vel.lerp(desired, Math.min(1, dt * 1.6));
     this.pos.addScaledVector(this.vel, dt);
-    // 그래도 물가를 넘으면 안쪽으로 되돌림
-    if (!insideSky(this.pos.x, this.pos.z, 1)) {
-      this.pos.x *= 0.995;
-      this.pos.z *= 0.995;
-      if (!insideSky(this.target.x, this.target.z)) this.target = randomSkyPoint();
-    }
-    // 바닥과 수면 사이 (수면 바로 아래까지만)
-    const lo = Math.max(-SKY_DEPTH + 0.4, skyFloor(this.pos.x, this.pos.z) + 0.45);
-    this.pos.y = clamp(this.pos.y, Math.min(lo, -0.5), -0.5);
+    // 물가 안쪽, 바위섬 밖, 바닥과 수면 사이
+    this.constrain();
     this.root.position.copy(this.pos);
     this.root.position.y += Math.sin(time * 1.3 + this.speed * 9) * 0.04;
     if (this.vel.lengthSq() > 1e-4) {
@@ -1250,6 +1301,7 @@ class SkyFish {
 
   updateLeap(dt, time, animate) {
     const L = this.leap;
+    if (L.fall) return this.updateFall(dt, animate);
     L.t += dt / L.dur;
     const t = Math.min(1, L.t);
     const prev = this.pos.clone();
@@ -1259,6 +1311,22 @@ class SkyFish {
     if (v.lengthSq() > 1e-8) {
       this.root.rotation.y = Math.atan2(v.x, v.z);
       this.root.rotation.x = -Math.atan2(v.y, Math.hypot(v.x, v.z)) * 0.8;
+    }
+    // 공중에서 구름다리에 부딪히면: 튕겨 나와 물로 떨어짐
+    if (hitsBridge(this.pos, this.radius * 0.8)) {
+      const [, vPrev] = toBridge(prev.x, prev.z);
+      const [nx, nz] = fromBridge(0, vPrev >= 0 ? 1 : -1);
+      const away = new THREE.Vector3(nx - fromBridge(0, 0)[0], 0, nz - fromBridge(0, 0)[1]).normalize();
+      this.pos.copy(prev);
+      this.leap = { fall: true, vel: away.multiplyScalar(1.6).setY(Math.min(0, v.y / Math.max(dt, 1e-3)) * 0.2 + 0.6) };
+      this.pop = 0.8;
+      if (animate) {
+        this.world.burst(this.worldPos(tmpV2), 0xffffff, 10, 0.6);
+        this.world.sfx?.plop();
+      }
+      this.root.position.copy(this.pos);
+      this.updateSay();
+      return;
     }
     this.root.position.copy(this.pos);
     if (animate) {
@@ -1270,6 +1338,34 @@ class SkyFish {
       this.root.rotation.x = 0;
       this.vel.subVectors(L.to, L.from).setY(0).setLength(0.6);
       this.target = randomSkyPoint();
+      if (animate) {
+        const p = this.worldPos();
+        p.y = SKY_Y + 0.05;
+        this.world.splash(p, 0.7, false);
+      }
+    }
+    this.updateSay();
+  }
+
+  // 다리에 부딪힌 뒤: 중력으로 떨어져 물에 퐁당
+  updateFall(dt, animate) {
+    const L = this.leap;
+    L.vel.y -= GRAVITY * dt;
+    this.pos.addScaledVector(L.vel, dt);
+    this.root.rotation.x += (1.1 - this.root.rotation.x) * Math.min(1, dt * 4); // 머리부터 떨어짐
+    if (hitsBridge(this.pos, this.radius * 0.8)) {
+      // 그래도 다리에 걸치면 다리 바깥쪽으로 더 밀어냄
+      this.pos.x += L.vel.x * dt * 2;
+      this.pos.z += L.vel.z * dt * 2;
+    }
+    this.root.position.copy(this.pos);
+    if (animate) this.mixer.update(dt * 3);
+    if (this.pos.y <= -0.5) {
+      this.leap = null;
+      this.root.rotation.x = 0;
+      this.vel.set(L.vel.x, 0, L.vel.z).setLength(0.6);
+      this.target = randomSkyPoint();
+      this.constrain();
       if (animate) {
         const p = this.worldPos();
         p.y = SKY_Y + 0.05;
@@ -1961,7 +2057,7 @@ export class World {
     g.rotation.y = BRIDGE_ROT; // 다리 기준 좌표 (x=u, z=v)
     parent.add(g);
     const span = BRIDGE_SPAN;
-    const W = 1.8; // 다리 폭
+    const W = BRIDGE_W;
     const steps = 40;
     const gold = this.goldMat();
     const marble = new THREE.MeshStandardMaterial({ color: 0xf6f1e7, roughness: 0.32, metalness: 0.05, emissive: 0x2a2620 });
@@ -3079,6 +3175,64 @@ export class World {
     }
   }
 
+  // 하늘 연못 물고기끼리 서로 통과하지 않게 (몸통 캡슐끼리 밀어내고 살짝 튕김)
+  resolveSkyCollisions(time, skyOn) {
+    const fish = [...this.skyFish.values()].filter((f) => !f.leap); // 공중에 있는 물고기는 빼고
+    const c1 = new THREE.Vector3();
+    const c2 = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    const moved = new Set();
+    // 여러 마리가 한데 몰려도 한 프레임 안에 풀리게 몇 번 되풀이 (매번 물가·바닥 제한까지 다시 맞춤)
+    for (let pass = 0; pass < 4; pass++) {
+      const list = fish.map((f) => {
+        const d = f.bodyDir(new THREE.Vector3()).multiplyScalar(f.halfLen);
+        return { f, a: f.pos.clone().add(d), b: f.pos.clone().sub(d), r: f.radius, m: f.radius ** 3 };
+      });
+      let any = false;
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const A = list[i];
+          const B = list[j];
+          const reach = A.r + B.r;
+          if (A.f.pos.distanceToSquared(B.f.pos) > (reach + A.f.halfLen + B.f.halfLen) ** 2) continue;
+          closestSegSeg(A.a, A.b, B.a, B.b, c1, c2);
+          n.subVectors(c1, c2);
+          let dist = n.length();
+          if (dist >= reach) continue;
+          // 수면과 바닥 사이 얇은 물에 있으니 주로 옆으로 떼어 놓음
+          n.y *= 0.35;
+          if (n.lengthSq() < 1e-8) n.set(rand(-1, 1), 0, rand(-1, 1));
+          n.normalize();
+          dist = Math.min(dist, reach);
+          const overlap = reach - dist + 0.01;
+          const wa = B.m / (A.m + B.m);
+          const wb = A.m / (A.m + B.m);
+          A.f.pos.addScaledVector(n, overlap * wa);
+          B.f.pos.addScaledVector(n, -overlap * wb);
+          for (const q of [A.a, A.b]) q.addScaledVector(n, overlap * wa);
+          for (const q of [B.a, B.b]) q.addScaledVector(n, -overlap * wb);
+          moved.add(A.f).add(B.f);
+          any = true;
+          const vn = tmpV.subVectors(A.f.vel, B.f.vel).dot(n);
+          if (vn < 0 && pass === 0) {
+            const jImp = (-(1 + 0.3) * vn) / (1 / A.m + 1 / B.m);
+            A.f.vel.addScaledVector(n, jImp / A.m);
+            B.f.vel.addScaledVector(n, -jImp / B.m);
+            if (skyOn && -vn > 0.6) {
+              A.f.pop = Math.max(A.f.pop, 0.4);
+              B.f.pop = Math.max(B.f.pop, 0.4);
+              const at = c1.lerp(c2, 0.5).add(this.skyPond.position);
+              for (let k = 0; k < 4; k++) this.spawnParticle(at, 0xdff6ff, new THREE.Vector3(rand(-0.4, 0.4), rand(0.3, 0.9), rand(-0.4, 0.4)), 0.7, 0.12, 0.4);
+            }
+          }
+        }
+      }
+      for (const f of moved) f.constrain();
+      if (!any) break;
+    }
+    for (const f of moved) f.root.position.copy(f.pos);
+  }
+
   // 세게 부딪히면: 몸을 흔들고 물방울, 놀란 물고기는 반대쪽으로 질주
   bonk(a, b, n, at, time) {
     a.wiggle = Math.max(a.wiggle, 0.5);
@@ -3632,6 +3786,7 @@ export class World {
     // 하늘 연못: 금빛 물고기 (꼬리 애니메이션은 하늘 연못이 보일 때만), 구름 흔들림
     const skyOn = !!this.skyView || !!this.director;
     for (const f of this.skyFish.values()) f.update(dt, time, skyOn);
+    this.resolveSkyCollisions(time, skyOn);
     for (const c of this.skyClouds) {
       const u = c.userData;
       c.position.set(u.base.x + Math.sin(time * 0.15 + u.ph) * 0.6, u.base.y + Math.sin(time * 0.4 + u.ph) * 0.15, u.base.z);
