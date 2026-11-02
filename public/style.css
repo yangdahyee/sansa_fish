@@ -625,3 +625,13 @@ body.card-open .caption { opacity: 0 !important; }
 .card-meta .report:hover { color: var(--coral); }
 /* 정보 칩 줄로 신고가 옮겨 가 버튼 줄이 비면 자리를 차지하지 않게 */
 .card-actions:not(:has(> button:not([hidden]))) { display: none; }
+
+/* 안내(caption.tips): 눈 내리는 하늘에서도 읽히게 반투명 카드, 안내마다 한 덩어리 */
+.caption.tips {
+  left: 50%; right: auto; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 32px);
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; padding: 10px 16px; border-radius: 16px;
+  font-size: 13.5px; letter-spacing: 0; color: #f3f6fb; text-shadow: none;
+  background: rgba(10, 22, 42, .62); border: 1px solid rgba(160, 210, 255, .18); backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .25);
+}
+.caption.tips .tip { white-space: nowrap; }

@@ -43,9 +43,19 @@ function toast(text, cls = '') {
   while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
 }
 
+// text 가 배열이면 '안내' 모양: 반투명 카드에 짧은 안내 여러 개 (줄이 바뀌어도 안내 하나가 중간에서 끊기지 않게)
 function caption(text, ms = 4000) {
   const el = $('caption');
-  el.textContent = text;
+  el.textContent = '';
+  el.classList.toggle('tips', Array.isArray(text));
+  if (Array.isArray(text)) {
+    for (const t of text) {
+      const s = document.createElement('span');
+      s.className = 'tip';
+      s.textContent = t;
+      el.appendChild(s);
+    }
+  } else el.textContent = text;
   el.classList.add('on');
   clearTimeout(caption.t);
   caption.t = setTimeout(() => el.classList.remove('on'), ms);
@@ -680,9 +690,9 @@ async function main() {
       closeCard();
       caption(
         world.skyFish.size
-          ? '금빛 물고기를 누르면 소원이 보여요 · 물을 누르면 반짝이를 뿌려요'
-          : '아직 하늘 연못이 비어 있어요. 먹이 다섯 번이면 첫 물고기가 올라와요',
-        4200,
+          ? ['🐟 물고기를 누르면 소원이 보여요', '✨ 물을 누르면 반짝이를 뿌려요', '👆 끌어서 둘러보기']
+          : ['아직 하늘 연못이 비어 있어요', '✨ 먹이 다섯 번이면 첫 물고기가 올라와요'],
+        5000,
       );
     }
   };
