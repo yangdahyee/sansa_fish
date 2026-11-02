@@ -301,15 +301,6 @@ class Fish {
     });
     this.model = model;
     this.pivot.add(model);
-    // 크리스마스: 머리 위에 산타 모자 (물고기 종류마다 머리 높이가 달라 다시 맞춤)
-    if (SKY_SEASON === 'christmas') {
-      if (!this.hat) {
-        this.hat = this.world.makeSantaHat(false);
-        this.pivot.add(this.hat);
-      }
-      this.hat.position.set(0, src.size.y * s * 0.5 * 0.8, FISH_LEN * 0.16);
-      this.hat.rotation.x = -0.25;
-    }
     this.mixer = new THREE.AnimationMixer(model);
     this.applyGlow?.();
     if (src.clip) {
@@ -1119,7 +1110,7 @@ class SkyFish {
     this.root.add(this.pivot);
     // 이루어진 소원의 왕관: 머리 위에 살짝 뒤로 기울여
     // (크리스마스엔 금빛 털이 달린 산타 모자)
-    this.crown = SKY_SEASON === 'christmas' ? world.makeSantaHat(true) : world.makeCrown();
+    this.crown = SKY_SEASON === 'christmas' ? world.makeSantaHat() : world.makeCrown();
     this.crown.position.set(0, src.size.y * k * 0.5 * 0.82, FISH_LEN * 0.16);
     this.crown.rotation.x = -0.22;
     this.crown.scale.setScalar(1.05);
@@ -2344,44 +2335,98 @@ export class World {
     x.lights.push(this.makeBulbs(bp, bc, 0.42, this.bridgeGroup));
   }
 
-  // 산타 모자: 뒤로 휘어 늘어진 빨간 고깔 + 털 테두리 + 끝 방울.
-  // sky 면 하늘 연못용 (금빛 털·금 방울, 하늘 수면 기준 물빛)
-  makeSantaHat(sky) {
-    this._hats ??= {};
-    if (!this._hats[sky]) {
-      const cone = new THREE.ConeGeometry(0.16, 0.42, 14, 6);
+  // 하늘 연못 산타 모자: 천 느낌 — 벨벳 결(빛을 받으면 가장자리가 은은히 밝아짐) + 주름 + 축 늘어진 끝,
+  // 몽글몽글한 크림색 털 테두리와 털 방울, 털 위에 가는 금 띠
+  makeSantaHat() {
+    if (!this._hat) {
+      // 천 결: 가는 실이 엇갈린 무늬를 울퉁불퉁함(bump)으로
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const x = c.getContext('2d');
+      x.fillStyle = '#808080';
+      x.fillRect(0, 0, 64, 64);
+      for (let i = 0; i < 64; i += 2) {
+        x.fillStyle = i % 4 ? '#9a9a9a' : '#6a6a6a';
+        x.fillRect(0, i, 64, 1);
+        x.fillStyle = i % 4 ? '#707070' : '#949494';
+        x.fillRect(i, 0, 1, 64);
+      }
+      for (let k = 0; k < 400; k++) {
+        const v = 100 + Math.random() * 60;
+        x.fillStyle = `rgb(${v},${v},${v})`;
+        x.fillRect(Math.random() * 64, Math.random() * 64, 1, 1);
+      }
+      const weave = new THREE.CanvasTexture(c);
+      weave.wrapS = weave.wrapT = THREE.RepeatWrapping;
+      weave.repeat.set(3, 3);
+
+      // 몸통: 주름진 고깔, 끝으로 갈수록 뒤로 휘다가 옆으로 축 처짐
+      const cone = new THREE.ConeGeometry(0.17, 0.46, 24, 12, true);
       const cp = cone.attributes.position;
       for (let i = 0; i < cp.count; i++) {
-        const t = (cp.getY(i) + 0.21) / 0.42; // 0 밑 → 1 끝
-        cp.setZ(i, cp.getZ(i) - t * t * 0.2); // 끝으로 갈수록 뒤로 휨
-        cp.setY(i, cp.getY(i) - t * t * 0.08);
+        const px = cp.getX(i);
+        const pz = cp.getZ(i);
+        const t = (cp.getY(i) + 0.23) / 0.46; // 0 밑 → 1 끝
+        const a = Math.atan2(pz, px);
+        const fold = 1 + Math.sin(a * 7 + t * 2.5) * 0.06 * (1 - t) + Math.sin(a * 3 - t * 4) * 0.04; // 세로 주름
+        cp.setX(i, px * fold + t * t * t * 0.1);
+        cp.setZ(i, pz * fold - t * t * 0.22);
+        cp.setY(i, cp.getY(i) - t * t * 0.14 + Math.sin(t * 9) * 0.006); // 가로로 살짝 구겨짐
       }
       cone.computeVertexNormals();
-      cone.translate(0, 0.21, 0);
-      const brim = new THREE.TorusGeometry(0.16, 0.05, 8, 18);
+      cone.translate(0, 0.23, 0);
+      // 털: 울퉁불퉁 부푼 고리와 방울
+      const fluff = (geo, amt, seed, jitter = 1) => {
+        const p = geo.attributes.position;
+        const n = new THREE.Vector3();
+        for (let i = 0; i < p.count; i++) {
+          n.set(p.getX(i), p.getY(i), p.getZ(i));
+          const k = 1 + Math.sin(n.x * 61 + seed) * Math.cos(n.y * 53 + seed * 2) * Math.sin(n.z * 47) * amt + (Math.random() - 0.5) * amt * jitter;
+          p.setXYZ(i, n.x * k, n.y * k, n.z * k);
+        }
+        geo.computeVertexNormals();
+        return geo;
+      };
+      const brim = new THREE.TorusGeometry(0.17, 0.055, 12, 40);
+      fluff(brim, 0.06, 1);
       brim.rotateX(Math.PI / 2);
       brim.translate(0, 0.02, 0);
-      const ball = new THREE.SphereGeometry(0.065, 10, 8);
-      ball.translate(0, 0.42 - 0.08, -0.2);
-      const red = new THREE.MeshStandardMaterial({ color: 0xd3202f, roughness: 0.75, emissive: 0x2a0306 });
-      const fur = sky ? this.goldMat().clone() : new THREE.MeshStandardMaterial({ color: 0xf7f7f4, roughness: 1, emissive: 0x2a2a2a });
-      // 물속에서는 물고기처럼 깊이만큼 물빛 (수면 뒤에 그려 색이 빠지지 않게)
-      for (const mat of [red, fur]) {
-        if (sky) addWaterTint(mat, this.skyUnder, SKY_Y, 1.6);
-        else addWaterTint(mat, this.waterUniforms.uUnder);
-      }
-      this._hats[sky] = { body: cone, trim: mergeGeometries([brim.toNonIndexed(), ball.toNonIndexed()]), red, fur };
+      // 방울: 매끈한 공에 부드러운 굴곡만 (자잘하게 흔들면 각지고 어두워 보임)
+      const ball = fluff(new THREE.SphereGeometry(0.078, 20, 14), 0.07, 2, 0);
+      ball.translate(0.095, 0.31, -0.205);
+      const piping = new THREE.TorusGeometry(0.162, 0.009, 6, 40);
+      piping.rotateX(Math.PI / 2);
+      piping.translate(0, 0.08, 0);
+
+      const velvet = new THREE.MeshPhysicalMaterial({
+        color: 0xa8121f,
+        roughness: 0.92,
+        sheen: 1,
+        sheenColor: new THREE.Color(0xff7080),
+        sheenRoughness: 0.45,
+        bumpMap: weave,
+        bumpScale: 0.6,
+        side: THREE.DoubleSide,
+      });
+      const fur = new THREE.MeshPhysicalMaterial({ color: 0xfff6e6, roughness: 1, sheen: 1, sheenColor: new THREE.Color(0xffffff), sheenRoughness: 0.8, bumpMap: weave, bumpScale: 1.4 });
+      const gold = this.goldMat().clone();
+      // 물속에서는 물고기처럼 깊이만큼 물빛
+      for (const m of [velvet, fur, gold]) addWaterTint(m, this.skyUnder, SKY_Y, 1.6);
+      this._hat = { cone, fur: mergeGeometries([brim.toNonIndexed(), ball.toNonIndexed()]), piping, velvet, furM: fur, gold };
     }
-    const h = this._hats[sky];
+    const h = this._hat;
     const g = new THREE.Group();
-    const a = new THREE.Mesh(h.body, h.red);
-    const b = new THREE.Mesh(h.trim, h.fur);
-    for (const m of [a, b]) {
-      m.renderOrder = 2.5;
-      m.material.transparent = true;
-      m.material.depthWrite = true;
+    for (const [geo, mat] of [
+      [h.cone, h.velvet],
+      [h.fur, h.furM],
+      [h.piping, h.gold],
+    ]) {
+      const m = new THREE.Mesh(geo, mat);
+      m.renderOrder = 2.5; // 수면 뒤에 그려 색이 빠지지 않게
+      mat.transparent = true;
+      mat.depthWrite = true;
+      g.add(m);
     }
-    g.add(a, b);
     return g;
   }
 
