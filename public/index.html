@@ -13,7 +13,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>소원 연못 — 소원을 물고기에 담아 놓아주세요</title>
-  <meta name="description" content="소원을 물고기에 담아 연못에 놓아주세요. 먹이를 5번 주면 소원이 이루어져 하늘의 별이 됩니다." />
+  <meta name="description" content="소원을 물고기에 담아 연못에 놓아주세요. 먹이를 5번 주면 소원이 이루어져 폭포 위 하늘 연못의 금빛 물고기가 됩니다." />
   <meta name="theme-color" content="#0b1a2e" />
   <link rel="manifest" href="/manifest.webmanifest" />
   <link rel="icon" href="/icon.svg" />
@@ -47,7 +47,7 @@
       </div>
     </div>
     <div class="top-actions">
-      <button id="btnSky" class="ghost" title="하늘의 별(이루어진 소원) 보기">✦<span> 하늘 보기</span></button>
+      <button id="btnSky" class="ghost" title="하늘 연못(이루어진 소원) 보기">✦<span> 하늘 연못</span></button>
       <button id="btnList" class="ghost" title="소원 모아 보기">📜<span> 소원 모아 보기</span></button>
       <button id="btnSound" class="ghost icon" title="소리 켜기/끄기">🔇</button>
       <button id="btnPanel" class="ghost icon mobile-only" title="내 소원">🐟</button>
@@ -60,7 +60,7 @@
     <!-- 소원이 없을 때 -->
     <section id="releaseView" hidden>
       <h2>소원 하나를 물고기에 담아 보세요</h2>
-      <p class="hint">소원을 담은 물고기에게 <b>먹이</b>를 <b id="goalText">5</b>번 주면 소원이 이루어져 하늘의 별이 돼요. 내가 줘도, 친구가 줘도 좋아요.</p>
+      <p class="hint">소원을 담은 물고기에게 <b>먹이</b>를 <b id="goalText">5</b>번 주면 소원이 이루어져 폭포 위 하늘 연못으로 올라가요. 내가 줘도, 친구가 줘도 좋아요.</p>
 
       <label class="field">
         <span>나의 소원</span>
@@ -97,14 +97,14 @@
       <div class="panel-foot"><button id="btnDeleteMine" class="link">소원 지우기</button></div>
     </section>
 
-    <!-- 별이 된 내 소원 -->
+    <!-- 이루어진 내 소원 -->
     <section id="myStars" class="my-stars" hidden>
       <h3>이루어진 내 소원</h3>
       <ul id="myStarList"></ul>
     </section>
   </aside>
 
-  <!-- 소원 카드 (물고기·별을 눌렀을 때) -->
+  <!-- 소원 카드 (물고기를 눌렀을 때) -->
   <div id="wishCard" class="fish-card" hidden>
     <button class="close" id="cardClose" aria-label="닫기">×</button>
     <p class="fish-name" id="cardName"></p>
@@ -185,7 +185,7 @@
       </nav>
       <div class="list-sort" id="listSort">
         <button data-sort="new" class="on">새로운 순</button>
-        <button data-sort="near">곧 별이 될 순</button>
+        <button data-sort="near">곧 이루어질 순</button>
       </div>
       <ul class="list-items" id="listItems"></ul>
     </div>

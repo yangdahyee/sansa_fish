@@ -22,6 +22,31 @@ const NPC_TARGET = 6;
 const GATE_Z = FALLS_Z - TIERS * 0.75 - 1.4; // 꼭대기 단 위, 홍살문이 서는 자리
 const GATE_BASE_Y = TIERS * TIER_H + 0.05; // 꼭대기 단 윗면 높이 // 연못이 너무 비어 보이지 않게 채우는 '연못 친구' 수
 
+// ---------- 하늘 연못: 등용문 너머 구름 위에 떠 있는 섬. 이루어진 소원이 금빛 물고기로 사는 곳 ----------
+const SKY_X = 0;
+const SKY_Y = 16; // 수면 높이
+const SKY_Z = -29;
+const SKY_RX = 6.5;
+const SKY_RZ = 4.6;
+const SKY_DEPTH = 1.1;
+// 한 번에 헤엄치는 금빛 물고기 수 (오래된 소원부터 쉬러 감 — 목록·내 소원에서 부르면 다시 나옴)
+const SKY_MAX = /Mobi|Android/i.test(globalThis.navigator?.userAgent || '') ? 24 : 40;
+
+function insideSky(x, z, margin = 0.9) {
+  const rx = SKY_RX - margin;
+  const rz = SKY_RZ - margin;
+  return (x * x) / (rx * rx) + (z * z) / (rz * rz) <= 1;
+}
+// 하늘 연못 안의 무작위 자리 (섬 기준 좌표)
+function randomSkyPoint() {
+  for (let i = 0; i < 30; i++) {
+    const x = rand(-SKY_RX, SKY_RX);
+    const z = rand(-SKY_RZ, SKY_RZ);
+    if (insideSky(x, z)) return new THREE.Vector3(x, rand(-0.75, -0.3), z);
+  }
+  return new THREE.Vector3(0, -0.5, 0);
+}
+
 const MOVE_IDS = MOVES.map((m) => m.id);
 // 스스로 고를 때의 동작 비율
 const AUTO_MOVES = { dash: 3, glide: 1, circle: 3, nibble: 2, forage: 2, roll: 1, wag: 1 };
@@ -374,7 +399,7 @@ class Fish {
     this.action = { type: 'leap', phase: 'rise', t: 0, dir };
   }
 
-  // starPos: 이 꿈이 별이 될 하늘 위치 (비행 경로의 끝)
+  // starPos: 비행 경로의 끝 (하늘 연못 위)
   ascend(onDone, starPos = null) {
     this.move = null;
     this.manual = null;
@@ -933,7 +958,7 @@ class Fish {
         return;
       }
       if (a.phase === 'fly') {
-        // 홍살문을 지나 → 크게 돌아 화면 바로 앞을 스쳐 지나가고 → 하늘로 올라 별이 됨
+        // 홍살문을 지나 → 크게 돌아 화면 바로 앞을 스쳐 지나가고 → 하늘 연못으로 뛰어듦
         if (!a.curve) {
           const cam = w.camera;
           const camPos = cam.position.clone();
@@ -945,7 +970,7 @@ class Fish {
           const swoop = a.from.clone().lerp(camPos, 0.45).addScaledVector(UP, 4);
           a.near = camPos.clone().addScaledVector(fwd, 4.6).addScaledVector(right, 1.3).addScaledVector(up, -0.4);
           const past = camPos.clone().addScaledVector(fwd, 1.2).addScaledVector(right, -3.2).addScaledVector(up, 2.4);
-          const sky = a.starPos ? a.starPos.clone() : new THREE.Vector3(a.from.x - 8, 42, -65);
+          const sky = a.starPos ? a.starPos.clone() : w.skyEntryPoint();
           a.curve = new THREE.CatmullRomCurve3([a.from.clone(), through, behind, swoop, a.near, past, sky], false, 'centripetal');
           a.nearU = 4 / 6; // 화면 앞을 지나는 순간
           a.u = 0;
@@ -982,6 +1007,129 @@ class Fish {
 }
 
 // ======================================================================
+// 하늘 연못의 금빛 물고기 (이루어진 소원 하나 = 한 마리). 연못 물고기보다 가볍게:
+// 충돌·동작 없이 느긋하게 헤엄만 치고, 하늘 연못을 볼 때만 꼬리 애니메이션을 돌린다
+// ======================================================================
+class SkyFish {
+  constructor(world, wish) {
+    this.world = world;
+    this.id = wish.id;
+    this.data = { ...wish };
+    this.root = new THREE.Group();
+    this.root.rotation.order = 'YXZ';
+    const src = world.models[wish.species] || world.models[SPECIES_IDS[0]];
+    const model = SkeletonUtils.clone(src.scene);
+    const k = FISH_LEN / src.size.z;
+    model.scale.setScalar(k);
+    model.position.copy(src.center).multiplyScalar(-k);
+    model.traverse((o) => {
+      if (o.isMesh) {
+        o.frustumCulled = false;
+        o.material = o.material.clone();
+        o.material.transparent = false;
+        if (o.material.emissive) o.material.emissive.setRGB(1, 0.62, 0.15).multiplyScalar(0.32); // 금빛
+      }
+    });
+    this.pivot = new THREE.Group();
+    this.pivot.add(model);
+    this.root.add(this.pivot);
+    this.mixer = new THREE.AnimationMixer(model);
+    if (src.clip) {
+      const a = this.mixer.clipAction(src.clip);
+      a.time = Math.random() * src.clip.duration;
+      a.play();
+    }
+    // 손가락으로도 잘 눌리게 넉넉한 투명 구
+    this.hit = new THREE.Mesh(
+      new THREE.SphereGeometry(0.95, 10, 8),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
+    );
+    this.hit.userData.skyFish = this;
+    this.root.add(this.hit);
+    this.pos = randomSkyPoint();
+    this.target = randomSkyPoint();
+    this.vel = new THREE.Vector3(rand(-1, 1), 0, rand(-1, 1)).setLength(0.4);
+    this.speed = rand(0.45, 0.85);
+    this.scaleNow = 1.15;
+    this.pop = 0; // 눌렸을 때 반짝 커짐
+    this.root.position.copy(this.pos);
+    world.skyPond.add(this.root);
+  }
+
+  // 하늘 연못 기준 위치 → 세상 위치
+  worldPos(out = new THREE.Vector3()) {
+    return out.copy(this.pos).add(this.world.skyPond.position);
+  }
+
+  // 소원 제목을 말풍선으로
+  say(text) {
+    this.sayEl?.remove();
+    const el = document.createElement('div');
+    el.className = 'say sky';
+    el.textContent = text;
+    this.world.labels.appendChild(el);
+    this.sayEl = el;
+    this.pop = 1;
+    clearTimeout(this.sayTimer);
+    this.sayTimer = setTimeout(() => {
+      el.remove();
+      if (this.sayEl === el) this.sayEl = null;
+    }, 5000);
+  }
+
+  dispose() {
+    this.world.skyPond.remove(this.root);
+    this.sayEl?.remove();
+    this.mixer.stopAllAction();
+  }
+
+  update(dt, time, animate) {
+    if (this.pos.distanceTo(this.target) < 0.8) {
+      this.target = randomSkyPoint();
+      this.speed = rand(0.45, 0.85);
+    }
+    const desired = tmpV.subVectors(this.target, this.pos);
+    desired.setLength(Math.min(this.speed, desired.length() * 1.5));
+    // 서로 살짝 비켜 감
+    for (const o of this.world.skyFish.values()) {
+      if (o === this) continue;
+      const d = this.pos.distanceTo(o.pos);
+      if (d < 1.3 && d > 0.0001) desired.add(tmpV2.subVectors(this.pos, o.pos).setLength((1.3 - d) * 0.8));
+    }
+    this.vel.lerp(desired, Math.min(1, dt * 1.6));
+    this.pos.addScaledVector(this.vel, dt);
+    // 섬 밖으로 나가지 않게
+    if (!insideSky(this.pos.x, this.pos.z, 0.6)) {
+      this.pos.x *= 0.995;
+      this.pos.z *= 0.995;
+      this.target.set(this.target.x * 0.3, this.target.y, this.target.z * 0.3);
+    }
+    this.pos.y = clamp(this.pos.y, -SKY_DEPTH + 0.35, -0.25);
+    this.root.position.copy(this.pos);
+    this.root.position.y += Math.sin(time * 1.3 + this.speed * 9) * 0.04;
+    if (this.vel.lengthSq() > 1e-4) {
+      const yaw = Math.atan2(this.vel.x, this.vel.z);
+      let dy = yaw - this.root.rotation.y;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      this.root.rotation.y += dy * Math.min(1, dt * 3);
+    }
+    this.pop = Math.max(0, this.pop - dt * 1.5);
+    this.pivot.scale.setScalar(this.scaleNow * (1 + Math.sin(this.pop * Math.PI) * 0.25));
+    if (animate) this.mixer.update(dt * (0.8 + this.vel.length() * 0.6));
+
+    if (this.sayEl) {
+      this.worldPos(tmpV2);
+      tmpV2.y += 0.9;
+      tmpV2.project(this.world.camera);
+      const visible = tmpV2.z < 1 && Math.abs(tmpV2.x) < 1.1 && Math.abs(tmpV2.y) < 1.1;
+      this.sayEl.style.display = visible && this.world.skyView && !this.world.skyView.returning ? '' : 'none';
+      this.sayEl.style.left = `${(tmpV2.x * 0.5 + 0.5) * this.world.width}px`;
+      this.sayEl.style.top = `${(-tmpV2.y * 0.5 + 0.5) * this.world.height}px`;
+    }
+  }
+}
+
+// ======================================================================
 // 연못 세계
 // ======================================================================
 export class World {
@@ -989,6 +1137,7 @@ export class World {
     this.canvas = canvas;
     this.labels = labels;
     this.fishes = new Map();
+    this.skyFish = new Map(); // 하늘 연못의 금빛 물고기 (이루어진 소원)
     this.models = {};
     this.particles = [];
     this.trails = [];
@@ -1047,6 +1196,7 @@ export class World {
     this.buildLights();
     this.buildPond();
     this.buildFalls();
+    this.buildSkyPond();
     this.buildDecor();
     this.buildParticles();
 
@@ -1134,10 +1284,6 @@ export class World {
     moonCore.position.copy(moon.position);
     moonCore.lookAt(0, 0, 0);
     this.scene.add(moonCore);
-
-    // 등용한 꿈의 별자리
-    this.dreamStars = new THREE.Group();
-    this.scene.add(this.dreamStars);
   }
 
   buildLights() {
@@ -1426,6 +1572,120 @@ export class World {
     // 진행도 등불: 꿈을 가진 물고기마다 폭포의 어느 단까지 왔는지 작은 빛으로 표시
     this.markers = new THREE.Group();
     this.scene.add(this.markers);
+  }
+
+  // ---------- 하늘 연못 ----------
+  buildSkyPond() {
+    const g = new THREE.Group();
+    g.position.set(SKY_X, SKY_Y, SKY_Z);
+    this.skyPond = g;
+    const rockM = makeMossyRockMaterial({ color: 0x5a6470, moss: 0x3f6d4a, amount: 0.8 });
+    // 섬 아랫부분: 거꾸로 선 울퉁불퉁한 바위 (아래 연못에서 올려다보면 보임)
+    const coneG = new THREE.ConeGeometry(1, 1, 14, 5);
+    const cp = coneG.attributes.position;
+    for (let i = 0; i < cp.count; i++) {
+      const y = cp.getY(i);
+      if (y > 0.49) continue; // 꼭짓점은 그대로
+      const n = 1 + Math.sin(cp.getX(i) * 7 + y * 5) * 0.08 + rand(-0.06, 0.06);
+      cp.setXYZ(i, cp.getX(i) * n, y + rand(-0.03, 0.03), cp.getZ(i) * n);
+    }
+    coneG.computeVertexNormals();
+    const underM = makeMossyRockMaterial({ color: 0x3a434e, moss: 0x2f4f3a, amount: 0.5 });
+    // 큰 덩이 하나 + 여기저기 매달린 작은 바위 (뾰족한 깔때기처럼 보이지 않게)
+    for (const [x, z, sx, h, sz] of [
+      [0, 0, SKY_RX + 1.1, 3.6, SKY_RZ + 1.1],
+      [-2.8, 0.6, 2.6, 3.2, 2.2],
+      [2.6, -0.4, 2.8, 2.8, 2.4],
+      [0.6, 1.6, 2.2, 2.4, 1.8],
+      [-0.8, -1.6, 2.4, 3.6, 2],
+    ]) {
+      const under = new THREE.Mesh(coneG, underM);
+      under.rotation.x = Math.PI;
+      under.rotation.y = rand(0, 6);
+      under.scale.set(sx, h, sz);
+      under.position.set(x, -SKY_DEPTH - h / 2 + 0.05, z);
+      g.add(under);
+    }
+    // 둑(옆벽)과 바닥
+    const wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 48, 1, true), rockM);
+    wall.scale.set(SKY_RX + 0.9, SKY_DEPTH + 0.2, SKY_RZ + 0.9);
+    wall.position.y = -SKY_DEPTH / 2 + 0.05;
+    g.add(wall);
+    const floor = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 48),
+      addCaustics(new THREE.MeshStandardMaterial({ color: 0x5d8a7a, roughness: 1, emissive: 0x10302c }), this.waterUniforms.uTime, 0.7),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.scale.set(SKY_RX + 0.9, SKY_RZ + 0.9, 1);
+    floor.position.y = -SKY_DEPTH;
+    g.add(floor);
+    // 물
+    const water = new THREE.Mesh(new THREE.CircleGeometry(1, 64), this.poolMat);
+    water.rotation.x = -Math.PI / 2;
+    water.scale.set(SKY_RX + 0.6, SKY_RZ + 0.6, 1);
+    water.renderOrder = 2;
+    g.add(water);
+    // 둘레 바위
+    const rockG = new THREE.DodecahedronGeometry(1, 0);
+    const n = 34;
+    const rocks = new THREE.InstancedMesh(rockG, rockM, n);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rand(-0.05, 0.05);
+      const sc = rand(0.4, 0.85);
+      q.setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3)));
+      m.compose(
+        new THREE.Vector3(Math.cos(a) * (SKY_RX + rand(0.5, 1)), rand(-0.15, 0.15), Math.sin(a) * (SKY_RZ + rand(0.5, 1))),
+        q,
+        new THREE.Vector3(sc * 1.3, sc * 0.75, sc),
+      );
+      rocks.setMatrixAt(i, m);
+    }
+    g.add(rocks);
+    // 연잎·연꽃 몇 송이
+    const padTex = makePadTexture(1);
+    const padM = new THREE.MeshStandardMaterial({ map: padTex, emissiveMap: padTex, emissive: 0x2a342a, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.45 });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + rand(-0.3, 0.3);
+      const x = Math.cos(a) * (SKY_RX - 1.4) * rand(0.7, 1);
+      const z = Math.sin(a) * (SKY_RZ - 1.2) * rand(0.7, 1);
+      const r = rand(0.4, 0.7);
+      const pad = new THREE.Mesh(makePadGeometry(r), padM);
+      pad.rotation.y = rand(0, 6);
+      pad.position.set(x, 0.03, z);
+      g.add(pad);
+      if (i % 2 === 0) {
+        const fl = makeLotusFlower(rand(0.8, 1.1), i % 4 === 0 ? 0xf3c6d4 : 0xf78fb0);
+        fl.position.set(x + 0.12, 0.03, z);
+        g.add(fl);
+      }
+    }
+    // 은은한 금빛 기운과 구름
+    const aura = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd58a, transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    aura.scale.set(22, 12, 1);
+    aura.position.y = -1.5;
+    g.add(aura);
+    this.skyAura = aura;
+    this.skyClouds = [];
+    // 섬 아래를 감싸는 구름 (아래 연못에서는 구름 위에 떠 있는 섬으로 보이게)
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + rand(-0.2, 0.2);
+      const low = i % 2 === 0;
+      const c = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: this.glowTex, color: low ? 0xc9d6f0 : 0xdfe8ff, transparent: true, opacity: low ? rand(0.32, 0.45) : rand(0.18, 0.28), depthWrite: false }),
+      );
+      const sc = low ? rand(6, 10) : rand(5, 8);
+      c.scale.set(sc * 1.7, sc * 0.55, 1);
+      const rr = low ? rand(0.3, 0.9) : 1;
+      c.position.set(Math.cos(a) * (SKY_RX * rr + rand(0.5, 2.5)), low ? rand(-4.8, -3) : rand(-2.6, -1.2), Math.sin(a) * (SKY_RZ * rr + rand(0.5, 2)));
+      c.userData = { base: c.position.clone(), ph: rand(0, 6) };
+      g.add(c);
+      this.skyClouds.push(c);
+    }
+    this.scene.add(g);
   }
 
   buildDecor() {
@@ -2001,18 +2261,21 @@ export class World {
       }
       d.lastFish = f.pos.clone();
     } else {
-      // 물고기가 별이 된 뒤: 잠시 별을 바라보다가 원래 시점으로
+      // 물고기가 하늘 연못에 들어간 뒤: 잠시 내려다보다가 원래 시점으로
       if (d.stage === 'follow') {
         d.stage = 'sky';
         d.t = 0;
-        d.skyLook = d.lastFish ? d.lastFish.clone() : d.look.clone();
         this.ceremonyEnd();
       }
       d.t += dt;
       if (d.stage === 'sky') {
-        wantPos = this.camera.position.clone();
-        wantLook = d.skyLook;
-        if (d.t > 2.4) {
+        // 하늘 연못 위로 올라가 금빛 물고기가 들어가는 모습을 내려다봄
+        const narrow = this.width < 720;
+        wantPos = new THREE.Vector3(SKY_X, SKY_Y + (narrow ? 8 : 6), SKY_Z + (narrow ? 11 : 9));
+        wantLook = new THREE.Vector3(SKY_X, SKY_Y - 0.4, SKY_Z + 0.4);
+        rp = 1.6;
+        rl = 2.4;
+        if (d.t > 3.6) {
           d.stage = 'return';
           d.t = 0;
         }
@@ -2036,68 +2299,89 @@ export class World {
     this.camera.lookAt(d.look);
   }
 
-  // ---------- 별자리 ----------
-  starPosition(star) {
-    const key = star.id || `${star.name}|${star.at}`;
-    const h1 = hashStr(`${key}|a`);
-    const h2 = hashStr(`${key}|b`);
-    // 아래쪽에 더 많이 모이게: 연못 화면 위쪽 하늘에도 보이고, 하늘 보기를 하면 높이까지 펼쳐짐
-    return new THREE.Vector3((h1 - 0.5) * 100, 15 + Math.pow(h2, 1.6) * 42, -72 - h1 * 18);
+  // ---------- 하늘 연못의 금빛 물고기 ----------
+  // 폭포를 오른 물고기가 뛰어드는 자리 (세상 좌표)
+  skyEntryPoint() {
+    return new THREE.Vector3(SKY_X, SKY_Y + 2.2, SKY_Z + 1);
   }
 
-  addStar(star, { flash = false } = {}) {
-    if (star.id && this.hasStar(star.id)) return;
-    const color = SPECIES[star.species]?.color || '#ffd27a';
-    const s = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: this.glowTex,
-        color,
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        fog: false,
-      }),
-    );
-    s.position.copy(this.starPosition(star));
-    s.userData = { base: flash ? 14 : 3.2, ph: rand(0, 6), star };
-    s.scale.setScalar(s.userData.base);
-    this.dreamStars.add(s);
-    const core = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffffff, transparent: true, depthWrite: false, fog: false }),
-    );
-    core.scale.setScalar(0.35);
-    s.add(core);
+  hasSkyFish(id) {
+    return this.skyFish.has(id);
   }
 
-  pickStarAt(cx, cy, radius = 26) {
+  // splash: 방금 올라온 물고기면 물보라와 함께
+  addSkyFish(wish, { splash = false } = {}) {
+    if (!wish?.id || this.skyFish.has(wish.id) || !this.models[SPECIES_IDS[0]]) return this.skyFish.get(wish?.id) || null;
+    // 너무 많으면 오래된 소원부터 잠시 쉬러 감
+    if (this.skyFish.size >= SKY_MAX) {
+      const old = [...this.skyFish.values()]
+        .filter((f) => !f.sayEl && f.id !== this.skyView?.focusId)
+        .sort((a, b) => (a.data.starAt || 0) - (b.data.starAt || 0))[0];
+      if (old) this.removeSkyFish(old.id);
+    }
+    const f = new SkyFish(this, wish);
+    this.skyFish.set(f.id, f);
+    if (splash) {
+      f.pos.set(rand(-1, 1), -0.3, rand(-0.5, 1));
+      f.root.position.copy(f.pos);
+      f.pop = 1;
+      const p = f.worldPos();
+      p.y = SKY_Y + 0.1;
+      this.splash(p, 1.1, false);
+      this.burst(p, 0xffe2a0, 50, 1.2);
+      this.ringPulse(p, 0xffe2a0, 8);
+    }
+    return f;
+  }
+
+  removeSkyFish(id) {
+    const f = this.skyFish.get(id);
+    if (!f) return;
+    f.dispose();
+    this.skyFish.delete(id);
+  }
+
+  // 최근에 이루어진 소원부터 (list 는 새로운 순)
+  setSkyFish(list) {
+    for (const id of [...this.skyFish.keys()]) this.removeSkyFish(id);
+    list.slice(0, SKY_MAX).reverse().forEach((w) => this.addSkyFish(w));
+  }
+
+  getSkyFish(id) {
+    return this.skyFish.get(id) || null;
+  }
+
+  // 화면에서 가장 가까운 금빛 물고기 (손가락으로도 잘 눌리게)
+  pickSkyFishAt(ray, cx, cy, radius = 44) {
+    const hits = ray.intersectObjects([...this.skyFish.values()].map((f) => f.hit), false);
+    if (hits[0]) return hits[0].object.userData.skyFish;
     let best = null;
     let bestD = radius;
-    for (const s of this.dreamStars.children) {
-      tmpV2.copy(s.position).project(this.camera);
+    for (const f of this.skyFish.values()) {
+      f.worldPos(tmpV2).project(this.camera);
       if (tmpV2.z > 1) continue;
-      const sx = (tmpV2.x * 0.5 + 0.5) * this.width;
-      const sy = (-tmpV2.y * 0.5 + 0.5) * this.height;
-      const d = Math.hypot(sx - cx, sy - cy);
+      const d = Math.hypot((tmpV2.x * 0.5 + 0.5) * this.width - cx, (-tmpV2.y * 0.5 + 0.5) * this.height - cy);
       if (d < bestD) {
         bestD = d;
-        best = s;
+        best = f;
       }
     }
     return best;
   }
 
-  // ---------- 하늘 보기: 카메라가 하늘을 올려다봄 (focus 가 있으면 그 별로) ----------
-  setSkyView(on, focus = null) {
+  // ---------- 하늘 연못 보기: 카메라가 올라가 섬을 내려다봄 (focusId 가 있으면 그 물고기를 따라감) ----------
+  setSkyView(on, focusId = null) {
     if (on) {
       if (!this.skyView) {
         this.skyView = { saved: { pos: this.camera.position.clone(), target: this.controls.target.clone() }, look: this.controls.target.clone() };
         this.controls.enabled = false;
       }
-      this.skyView.focus = focus ? focus.clone() : null;
-      if (focus) {
-        const s = this.dreamStars.children.find((x) => x.position.distanceToSquared(focus) < 0.01);
-        if (s) s.userData.base = 14; // 반짝
-        this.ringPulse(focus, 0xffe2a0, 10);
+      this.skyView.returning = false;
+      this.skyView.focusId = focusId;
+      const f = focusId && this.skyFish.get(focusId);
+      if (f) {
+        f.pop = 1;
+        this.ringPulse(f.worldPos(), 0xffe2a0, 5);
       }
     } else if (this.skyView) {
       this.skyView.returning = true;
@@ -2121,21 +2405,22 @@ export class World {
       }
       return;
     }
-    const target = v.focus || new THREE.Vector3(0, 34, -80);
-    // 연못 앞쪽 낮은 곳에서 하늘을 올려다봄
-    const pos = new THREE.Vector3(target.x * 0.12, 4.5, 15);
+    const f = v.focusId && this.skyFish.get(v.focusId);
+    const narrow = this.width < 720;
+    let look;
+    let pos;
+    if (f) {
+      // 고른 물고기를 가까이서 따라감
+      look = f.worldPos(tmpV2.clone());
+      pos = look.clone().add(new THREE.Vector3(0, narrow ? 5 : 4, narrow ? 6.5 : 5.5));
+    } else {
+      // 섬 전체를 앞쪽 위에서 비스듬히 내려다봄 (휴대폰은 조금 더 멀리)
+      look = new THREE.Vector3(SKY_X, SKY_Y + 0.4, SKY_Z + 0.8);
+      pos = new THREE.Vector3(SKY_X, SKY_Y + (narrow ? 12 : 8.5), SKY_Z + (narrow ? 17 : 13.5));
+    }
     this.camera.position.lerp(pos, 1 - Math.exp(-dt * 2.2));
-    v.look.lerp(target, 1 - Math.exp(-dt * 2.6));
+    v.look.lerp(look, 1 - Math.exp(-dt * 2.6));
     this.camera.lookAt(v.look);
-  }
-
-  hasStar(id) {
-    return this.dreamStars.children.some((s) => s.userData.star?.id === id);
-  }
-
-  setStars(list) {
-    this.dreamStars.clear();
-    list.forEach((s) => this.addStar(s));
   }
 
   // ---------- 물고기 관리 ----------
@@ -2532,6 +2817,14 @@ export class World {
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
       ndc.set((e.clientX / this.width) * 2 - 1, -(e.clientY / this.height) * 2 + 1);
       ray.setFromCamera(ndc, this.camera);
+      // 하늘 연못을 보는 중: 금빛 물고기를 누르면 소원 제목이 뜸 (아래 연못 물고기는 움직이지 않음)
+      if (this.skyView) {
+        if (this.skyView.returning) return;
+        const sf = this.pickSkyFishAt(ray, e.clientX, e.clientY);
+        if (!sf) return this.onFishClick?.(null);
+        this.sfx?.chime();
+        return this.onSkyFishClick?.(sf.data, sf);
+      }
       const hits = ray.intersectObjects([...this.fishes.values()].map((f) => f.hit), false);
       const f = hits[0]?.object.userData.fish;
 
@@ -2540,16 +2833,6 @@ export class World {
       // 연못 전체 시점에서 내 물고기 → 내 꿈 패널
       if (f?.isMe && this.view.mode === 'pond') return this.onFishClick?.(f);
 
-      // 하늘의 별 → 별이 된 소원 보기
-      if (!f && this.onStarClick) {
-        // 별은 작고 멀어서 화면에서 가장 가까운 별을 찾음 (손가락으로도 잘 눌리게)
-        const s = this.pickStarAt(e.clientX, e.clientY, this.skyView ? 40 : 26);
-        if (s) {
-          this.ringPulse(s.position, 0xffffff, 6);
-          return this.onStarClick(s.userData.star);
-        }
-        if (this.skyView) return this.onFishClick?.(null); // 하늘 보기 중엔 물고기를 움직이지 않음
-      }
 
       // 빈 물(또는 연못 친구 물고기)을 눌렀을 때: 내 물고기가 있으면 그 자리로 헤엄쳐 감
       const focus = this.view.fishId && this.fishes.get(this.view.fishId);
@@ -2820,11 +3103,20 @@ export class World {
     // 진행도 등불 깜빡임
     for (const s of this.markers.children) s.material.opacity = 0.75 + Math.sin(time * 3 + s.userData.ph) * 0.25;
 
-    // 꿈 별 반짝임
-    for (const s of this.dreamStars.children) {
-      const u = s.userData;
-      if (u.base > 3.2) u.base += (3.2 - u.base) * dt * 0.6;
-      s.scale.setScalar(u.base * (0.85 + Math.sin(time * 2 + u.ph) * 0.15));
+    // 하늘 연못: 금빛 물고기 (꼬리 애니메이션은 하늘 연못이 보일 때만), 구름 흔들림
+    const skyOn = !!this.skyView || !!this.director;
+    for (const f of this.skyFish.values()) f.update(dt, time, skyOn);
+    for (const c of this.skyClouds) {
+      const u = c.userData;
+      c.position.set(u.base.x + Math.sin(time * 0.15 + u.ph) * 0.6, u.base.y + Math.sin(time * 0.4 + u.ph) * 0.15, u.base.z);
+    }
+    this.skyAura.material.opacity = 0.26 + Math.sin(time * 0.8) * 0.06;
+    // 등용문에서 하늘 연못으로 올라가는 금빛 티끌 (위에 무언가 있다는 표시)
+    if (Math.random() < dt * 2.2) {
+      const from = tmpV2.set(rand(-1.2, 1.2), GATE_BASE_Y + rand(2.6, 3.4), GATE_Z - 0.3);
+      const to = new THREE.Vector3(SKY_X + rand(-2, 2), SKY_Y - 0.5, SKY_Z + SKY_RZ * 0.4);
+      const life = rand(3.5, 5);
+      this.spawnParticle(from, Math.random() < 0.5 ? 0xffd27a : 0xfff3c4, to.sub(from).divideScalar(life), life, rand(0.1, 0.2), 0);
     }
 
     // 효과 파티클

@@ -2,7 +2,7 @@
 //
 //  물속  : 지금 응원이 필요한 소원 (물고기 한 마리 = 소원 하나)
 //  수면  : 물고기가 가끔 올라와 소원 한 줄을 띄움
-//  하늘  : 먹이를 GOAL 번 받아 용이 된 소원 (별)
+//  하늘 연못 : 먹이를 GOAL 번 받아 폭포를 오른 소원 (금빛 물고기)
 import { World } from './world.js';
 import { Live } from './live.js';
 import { SPECIES, SPECIES_IDS, PHRASES } from './data.js';
@@ -51,7 +51,7 @@ function caption(text, ms = 4000) {
   caption.t = setTimeout(() => el.classList.remove('on'), ms);
 }
 
-// 별이 되는 마지막 장면
+// 소원이 이루어지는 마지막 장면
 function celebrate({ title, dream, meta = '' }) {
   const box = $('celebrate');
   box.textContent = '';
@@ -123,7 +123,7 @@ async function main() {
   // ---------- 상단 통계 ----------
   function renderStats() {
     const n = (v) => Number(v || 0).toLocaleString('ko-KR');
-    $('stats').textContent = `소원 ${n(stats.total)} · 별 ${n(stats.stars)}${stats.online > 1 ? ` · 지금 ${n(stats.online)}명` : ''}`;
+    $('stats').textContent = `소원 ${n(stats.total)} · 이룬 소원 ${n(stats.stars)}${stats.online > 1 ? ` · 지금 ${n(stats.online)}명` : ''}`;
     $('goalText').textContent = GOAL;
   }
 
@@ -197,7 +197,7 @@ async function main() {
       t.className = 'star-link';
       t.title = '하늘에서 보기';
       t.onclick = () => {
-        showStar(w);
+        showStar(w, true);
         openCard({ ...w, status: 'star', mine: true });
       };
       const x = document.createElement('button');
@@ -434,7 +434,7 @@ async function main() {
     $('cardText').textContent = wishLine(w);
     $('cardFill').style.width = `${Math.min(100, (w.feeds / GOAL) * 100)}%`;
     $('cardLabel').textContent = star
-      ? `먹이 ${w.feeds}번으로 ${fmtDate(w.starAt)}에 이루어졌어요`
+      ? `먹이 ${w.feeds}번으로 ${fmtDate(w.starAt)}에 이루어져 하늘 연못에서 헤엄쳐요`
       : `✨ 먹이 ${w.feeds} / ${GOAL}${w.feeders ? ` · ${w.feeders}명이 응원` : ''}`;
     const b = $('btnFeed');
     b.hidden = star;
@@ -512,9 +512,11 @@ async function main() {
     lastGoto = now;
     live.send({ t: 'emote', kind: 'goto', p: [p.x, p.y, p.z].map((v) => Math.round(v * 100) / 100) });
   };
-  world.onStarClick = (star) => {
-    sfx.chime();
-    openCard({ ...star, status: 'star' });
+  // 하늘 연못의 금빛 물고기를 누르면: 물고기 위에 소원 제목 + 카드
+  world.onSkyFishClick = (w, f) => {
+    const known = wishes.get(w.id) || myStars.find((x) => x.id === w.id) || w;
+    f.say(known.text ? `“${known.text}”` : `🔒 ${known.name} 님의 마음속 소원`);
+    openCard({ ...known, status: 'star' });
   };
 
   // ---------- 먹이 주기 ----------
@@ -543,7 +545,7 @@ async function main() {
     } catch (e) {
       const msg = {
         too_fast: '천천히, 한 번씩 주세요 🐟',
-        already_star: '이미 별이 된 소원이에요 ✦',
+        already_star: '이미 이루어진 소원이에요 ✦',
         too_many: '잠시 쉬었다가 다시 해 주세요',
       }[e.code];
       toast(msg || '먹이를 주지 못했어요. 잠시 뒤 다시 해 주세요');
@@ -560,8 +562,13 @@ async function main() {
   $('btnSky').onclick = () => world.setSkyView(!world.skyView || world.skyView.returning);
   world.onSkyChange = (on) => {
     $('btnSky').classList.toggle('on', on);
-    $('btnSky').querySelector('span').textContent = on ? ' 연못으로' : ' 하늘 보기';
-    if (on) caption('별을 누르면 이루어진 소원이 보여요', 3500);
+    $('btnSky').querySelector('span').textContent = on ? ' 연못으로' : ' 하늘 연못';
+    document.body.classList.toggle('sky-view', on);
+    if (!ceremonyBusy) world.setCinema(on); // 패널을 잠깐 숨기니 화면 한가운데로
+    if (on) {
+      closeCard();
+      caption(world.skyFish.size ? '금빛 물고기를 누르면 이루어진 소원이 보여요' : '아직 하늘 연못이 비어 있어요. 먹이 다섯 번이면 첫 물고기가 올라와요', 3800);
+    }
   };
 
   // ---------- 아래 버튼 막대: 헤엄 · 소원 · 먹이주기 · 응원 ----------
@@ -683,11 +690,11 @@ async function main() {
     }
   };
 
-  // 숨겨지거나 지워진 소원은 연못·하늘에서 내림
-  // 하늘에서 그 별 보기
-  function showStar(w) {
-    if (!world.hasStar(w.id)) world.addStar({ ...w, status: 'star' });
-    world.setSkyView(true, world.starPosition(w));
+  // 하늘 연못에서 그 물고기 보기 (쉬러 갔던 오래된 소원이면 다시 불러옴)
+  function showStar(w, say = false) {
+    const f = world.getSkyFish(w.id) || world.addSkyFish({ ...w, status: 'star' }, { splash: true });
+    world.setSkyView(true, w.id);
+    if (say && f) f.say(w.text ? `“${w.text}”` : '🔒 마음속 소원');
   }
 
   // 내 소원 지우기 (헤엄치는 소원이든 별이든)
@@ -714,13 +721,12 @@ async function main() {
   function dropWish(id) {
     wishes.delete(id);
     if (world.getFish(id) && !world.getFish(id).action) world.removeFish(id);
-    const s = world.dreamStars.children.find((x) => x.userData.star?.id === id);
-    if (s) world.dreamStars.remove(s);
+    world.removeSkyFish(id);
     if (cardId === id) closeCard();
     if (myWish?.id === id) loadMine().catch(() => {});
   }
 
-  // ---------- 별이 될 때 ----------
+  // ---------- 소원이 이루어질 때 ----------
   const starred = new Set();
   function onStar(w) {
     if (starred.has(w.id)) return;
@@ -737,21 +743,22 @@ async function main() {
       renderPanel();
     }
     if (cardId === w.id) closeCard();
-    playAscend({ ...w, mine: mine || w.mine }, { cine: mine || state.fed.includes(w.id) });
+    // 내가 막 준 먹이로 이루어졌으면 (실시간 알림이 응답보다 먼저 와도) 장면으로
+    playAscend({ ...w, mine: mine || w.mine }, { cine: mine || state.fed.includes(w.id) || myPendingFeeds.has(w.id) });
   }
 
-  // 물고기가 폭포를 올라 별이 되는 장면
+  // 물고기가 폭포를 올라 하늘 연못으로 가는 장면
   function playAscend(w, { cine }) {
     let f = world.getFish(w.id);
     const finish = () => {
       world.removeFish(w.id);
-      world.addStar({ ...w, status: 'star' }, { flash: true });
+      world.addSkyFish({ ...w, status: 'star' }, { splash: true });
       world.refreshMarkers();
       if (cine) {
         celebrate({
           title: w.mine ? '소원이 이루어졌어요' : '함께 빌어 준 소원이 이루어졌어요',
           dream: wishLine(w),
-          meta: `먹이 ${GOAL}번이 모여 하늘의 별이 되었어요`,
+          meta: `먹이 ${GOAL}번이 모여 하늘 연못의 금빛 물고기가 되었어요`,
         });
       } else toast(`✦ ${w.name} 님의 소원이 이루어졌어요`, 'gold');
     };
@@ -775,7 +782,7 @@ async function main() {
         ceremonyBusy = false;
       });
     }
-    f.ascend(finish, world.starPosition(w));
+    f.ascend(finish, world.skyEntryPoint());
   }
 
   // ---------- 방생 의식 ----------
@@ -913,7 +920,7 @@ async function main() {
       creatingWish = false;
       closeRitual();
       if (e.code === 'already_swimming') {
-        toast('이미 헤엄치는 소원이 있어요. 별이 되면 새 소원을 띄울 수 있어요');
+        toast('이미 헤엄치는 소원이 있어요. 소원이 이루어지면 새 소원을 띄울 수 있어요');
         await loadMine();
       } else if (e.code === 'blocked_word') toast('연못에 어울리지 않는 말이 있어요. 소원을 고쳐 적어 주세요');
       else if (e.code === 'blocked_link') toast('링크·전화번호·이메일은 소원에 적을 수 없어요');
@@ -973,7 +980,7 @@ async function main() {
     if (!list.length) {
       const li = document.createElement('li');
       li.className = 'list-empty';
-      li.textContent = listTab === 'star' ? '아직 별이 된 소원이 없어요. 첫 별을 함께 띄워 볼까요?' : listTab === 'mine' ? '아직 띄운 소원이 없어요' : '아직 헤엄치는 소원이 없어요';
+      li.textContent = listTab === 'star' ? '아직 하늘 연못에 올라간 소원이 없어요. 첫 물고기를 함께 올려 볼까요?' : listTab === 'mine' ? '아직 띄운 소원이 없어요' : '아직 헤엄치는 소원이 없어요';
       ul.appendChild(li);
       return;
     }
@@ -1022,7 +1029,7 @@ async function main() {
       const look = document.createElement('button');
       look.className = 'small';
       look.textContent = w.status === 'star' ? '✦' : '🐟';
-      look.title = w.status === 'star' ? '하늘에서 보기' : '연못에서 보기';
+      look.title = w.status === 'star' ? '하늘 연못에서 보기' : '연못에서 보기';
       look.onclick = () => {
         closeList();
         if (w.status === 'swimming') {
@@ -1188,7 +1195,7 @@ async function main() {
     stats = st;
     GOAL = st.goal || GOAL;
     pond.wishes.forEach((w) => putFish(w));
-    world.setStars(sky.wishes);
+    world.setSkyFish(sky.wishes);
     sky.wishes.forEach((w) => wishes.set(w.id, w));
     await loadMine();
 
@@ -1200,16 +1207,15 @@ async function main() {
       state.seen[myWish.id] = myWish.feeds;
       save();
     }
-    // 없는 동안 별이 된 내 소원 → 지금 축하
+    // 없는 동안 이루어진 내 소원 → 지금 축하
     const fresh = myStars.filter((w) => !state.celebrated.includes(w.id));
     fresh.forEach((w) => state.celebrated.push(w.id));
     save();
     if (fresh[0]) {
       const w = fresh[0];
       setTimeout(() => {
-        // 하늘에 미리 있던 별은 잠시 빼고, 물고기가 올라가 다시 별이 되게
-        const s = world.dreamStars.children.find((x) => x.userData.star?.id === w.id);
-        if (s) world.dreamStars.remove(s);
+        // 하늘 연못에 미리 있던 물고기는 잠시 빼고, 아래에서 폭포를 올라가 다시 들어가게
+        world.removeSkyFish(w.id);
         starred.add(w.id);
         playAscend({ ...w, mine: true }, { cine: true });
       }, 1500);

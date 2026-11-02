@@ -549,3 +549,13 @@ body.say-open .fish-card { visibility: hidden; }
   .say-pop { bottom: calc(max(10px, env(safe-area-inset-bottom)) + 74px); width: calc(100% - 20px); }
   body.panel-open .say-pop { display: none; }
 }
+
+/* ---------- 하늘 연못 ---------- */
+.say.sky {
+  max-width: min(320px, 80vw); white-space: normal; text-align: center; line-height: 1.4;
+  background: linear-gradient(135deg, #fff6dc, #ffe2a6); color: #4a2a00; box-shadow: 0 6px 22px rgba(255, 190, 90, .45);
+}
+.say.sky::after { border-top-color: #ffe7b0; }
+/* 하늘 연못을 보는 동안엔 아래 버튼 막대·말 고르기를 잠깐 숨김 */
+body.sky-view .action-bar, body.sky-view .say-pop, body.sky-view .bottom-bars, body.sky-view #panel, body.sky-view .mini-bar { opacity: 0; pointer-events: none; }
+body.sky-view #panel { transition: opacity .3s; }
