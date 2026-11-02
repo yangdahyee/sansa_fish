@@ -542,9 +542,12 @@ async function main() {
     $('cardName').textContent = who;
   }
   // 정보 칩 줄: 있으면 신고·지우기도 이 줄 끝으로 (아래 빈 줄이 생기지 않게), 없으면 버튼 줄로 되돌림
+  const btnReportEl = $('btnReport');
+  const btnDeleteEl = $('btnDelete');
   function setCardMeta(chips) {
     const meta = $('cardMeta');
-    meta.textContent = '';
+    // 칩만 지움 (줄을 통째로 비우면 옮겨 둔 신고·지우기 버튼까지 지워져 'nullnull' 이 찍혔음)
+    meta.querySelectorAll('.chip').forEach((e) => e.remove());
     meta.hidden = !chips;
     const home = chips ? meta : $('cardActions');
     if (chips) {
@@ -552,10 +555,10 @@ async function main() {
         const el = document.createElement('span');
         el.className = 'chip';
         el.textContent = c;
-        meta.appendChild(el);
+        meta.insertBefore(el, btnReportEl.parentElement === meta ? btnReportEl : null);
       }
     }
-    home.append($('btnReport'), $('btnDelete'));
+    home.append(btnReportEl, btnDeleteEl);
   }
   // 아직 소원이 없는, 지금 접속한 사람의 물고기 카드
   function openPresenceCard(u, f) {
