@@ -301,6 +301,15 @@ class Fish {
     });
     this.model = model;
     this.pivot.add(model);
+    // 크리스마스: 머리 위에 산타 모자 (물고기 종류마다 머리 높이가 달라 다시 맞춤)
+    if (SKY_SEASON === 'christmas') {
+      if (!this.hat) {
+        this.hat = this.world.makeSantaHat(false);
+        this.pivot.add(this.hat);
+      }
+      this.hat.position.set(0, src.size.y * s * 0.5 * 0.8, FISH_LEN * 0.16);
+      this.hat.rotation.x = -0.25;
+    }
     this.mixer = new THREE.AnimationMixer(model);
     this.applyGlow?.();
     if (src.clip) {
@@ -1109,7 +1118,8 @@ class SkyFish {
     this.pivot.add(model);
     this.root.add(this.pivot);
     // 이루어진 소원의 왕관: 머리 위에 살짝 뒤로 기울여
-    this.crown = world.makeCrown();
+    // (크리스마스엔 금빛 털이 달린 산타 모자)
+    this.crown = SKY_SEASON === 'christmas' ? world.makeSantaHat(true) : world.makeCrown();
     this.crown.position.set(0, src.size.y * k * 0.5 * 0.82, FISH_LEN * 0.16);
     this.crown.rotation.x = -0.22;
     this.crown.scale.setScalar(1.05);
@@ -2332,6 +2342,47 @@ export class World {
       }
     }
     x.lights.push(this.makeBulbs(bp, bc, 0.42, this.bridgeGroup));
+  }
+
+  // 산타 모자: 뒤로 휘어 늘어진 빨간 고깔 + 털 테두리 + 끝 방울.
+  // sky 면 하늘 연못용 (금빛 털·금 방울, 하늘 수면 기준 물빛)
+  makeSantaHat(sky) {
+    this._hats ??= {};
+    if (!this._hats[sky]) {
+      const cone = new THREE.ConeGeometry(0.16, 0.42, 14, 6);
+      const cp = cone.attributes.position;
+      for (let i = 0; i < cp.count; i++) {
+        const t = (cp.getY(i) + 0.21) / 0.42; // 0 밑 → 1 끝
+        cp.setZ(i, cp.getZ(i) - t * t * 0.2); // 끝으로 갈수록 뒤로 휨
+        cp.setY(i, cp.getY(i) - t * t * 0.08);
+      }
+      cone.computeVertexNormals();
+      cone.translate(0, 0.21, 0);
+      const brim = new THREE.TorusGeometry(0.16, 0.05, 8, 18);
+      brim.rotateX(Math.PI / 2);
+      brim.translate(0, 0.02, 0);
+      const ball = new THREE.SphereGeometry(0.065, 10, 8);
+      ball.translate(0, 0.42 - 0.08, -0.2);
+      const red = new THREE.MeshStandardMaterial({ color: 0xd3202f, roughness: 0.75, emissive: 0x2a0306 });
+      const fur = sky ? this.goldMat().clone() : new THREE.MeshStandardMaterial({ color: 0xf7f7f4, roughness: 1, emissive: 0x2a2a2a });
+      // 물속에서는 물고기처럼 깊이만큼 물빛 (수면 뒤에 그려 색이 빠지지 않게)
+      for (const mat of [red, fur]) {
+        if (sky) addWaterTint(mat, this.skyUnder, SKY_Y, 1.6);
+        else addWaterTint(mat, this.waterUniforms.uUnder);
+      }
+      this._hats[sky] = { body: cone, trim: mergeGeometries([brim.toNonIndexed(), ball.toNonIndexed()]), red, fur };
+    }
+    const h = this._hats[sky];
+    const g = new THREE.Group();
+    const a = new THREE.Mesh(h.body, h.red);
+    const b = new THREE.Mesh(h.trim, h.fur);
+    for (const m of [a, b]) {
+      m.renderOrder = 2.5;
+      m.material.transparent = true;
+      m.material.depthWrite = true;
+    }
+    g.add(a, b);
+    return g;
   }
 
   // 반짝이는 전구 여러 개를 점 하나씩으로 (한 번에 그림). 색 배열은 반짝임 계산용으로 따로 둠
