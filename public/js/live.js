@@ -40,6 +40,20 @@ export class Live extends EventTarget {
     ws.onerror = () => {};
   }
 
+  // 페이지를 닫거나 앱을 끌 때 바로 나가기 (서버가 끊긴 걸 알아챌 때까지 기다리지 않게)
+  bindLeave() {
+    window.addEventListener('pagehide', () => {
+      clearInterval(this.beat);
+      try {
+        this.ws?.close(1000, 'bye');
+      } catch (_) {}
+    });
+    // 뒤로가기 캐시에서 돌아오면 다시 연결
+    window.addEventListener('pageshow', (e) => {
+      if (e.persisted && (!this.ws || this.ws.readyState > 1)) this.connect();
+    });
+  }
+
   send(msg) {
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
   }

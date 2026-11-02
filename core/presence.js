@@ -50,7 +50,7 @@ export function cleanEmote(raw) {
   return null;
 }
 
-// 같은 브라우저(같은 익명 아이디)의 여러 탭·설치한 앱은 한 사람으로 세기 위한 짧은 값.
+// 같은 브라우저(같은 익명 아이디)의 탭인지 알아보는 짧은 값 — 내 다른 탭을 내 화면에 남의 물고기로 그리지 않게.
 // 아이디를 한 번 더 해시해 앞부분만 쓰므로, 이 값으로 아이디를 알아낼 수 없음
 export async function personKey(uid) {
   if (typeof uid !== 'string' || !/^[a-f0-9]{16,64}$/.test(uid)) return null;
@@ -61,18 +61,11 @@ export async function personKey(uid) {
     .join('');
 }
 
-// 열린 연결들 → 한 사람에 하나 (같은 사람이면 가장 나중에 자기소개한 연결) + 사람 수
+// 열린 연결들 → 접속자 목록 + 접속자 수 (탭·창 하나하나가 한 명. 끊긴 연결은 STALE_MS 로 정리됨)
 // conns: [{ pid, key, profile, at }]
 export function summarizePresence(conns) {
-  const byKey = new Map();
-  for (const c of conns) {
-    if (!c.profile) continue; // 아직 들어오는 중
-    const k = c.key || `pid:${c.pid}`;
-    const prev = byKey.get(k);
-    if (!prev || (c.at || 0) >= (prev.at || 0)) byKey.set(k, c);
-  }
-  const users = [...byKey.values()].map((c) => ({ pid: c.pid, k: c.key || null, ...c.profile }));
-  return { users, n: Math.max(users.length, conns.length ? 1 : 0) };
+  const users = conns.filter((c) => c.profile).map((c) => ({ pid: c.pid, k: c.key || null, ...c.profile }));
+  return { users, n: conns.length };
 }
 
 // 연결이 살아 있는지: 브라우저가 이 간격보다 오래 아무 신호(ping)도 없으면 끊긴 것으로 봄

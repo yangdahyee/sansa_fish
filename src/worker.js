@@ -52,8 +52,8 @@ export class PondDO extends DurableObject {
       pair[1].send(JSON.stringify({ t: 'welcome', pid }));
       pair[1].send(JSON.stringify({ t: 'online', n: this.presence().n }));
       this.announceOnline();
-      // 끊긴 연결 정리를 위해 1분마다 확인 (연결이 남아 있는 동안만)
-      if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(now + 60 * 1000);
+      // 끊긴 연결 정리를 위해 30초마다 확인 (연결이 남아 있는 동안만)
+      if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(now + 30 * 1000);
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
     return this.pond.handle(request, request.headers.get('cf-connecting-ip') || '?');
@@ -68,7 +68,7 @@ export class PondDO extends DurableObject {
     }
   }
 
-  // 지금 연못에 있는 사람들: 열린 연결 중 같은 사람(같은 브라우저)은 하나로
+  // 지금 연못에 있는 사람들 (열린 연결 하나 = 한 명)
   presence() {
     const conns = [];
     for (const ws of this.ctx.getWebSockets()) {
@@ -87,7 +87,7 @@ export class PondDO extends DurableObject {
     }, 250);
   }
 
-  // 1분마다: 오래 신호가 없는 연결(폰 화면 꺼짐·앱 내림·네트워크 끊김)을 닫아 사람 수에서 뺌
+  // 30초마다: 오래 신호가 없는 연결(폰 화면 꺼짐·앱 내림·네트워크 끊김)을 닫아 사람 수와 연못에서 뺌
   async alarm() {
     const now = Date.now();
     let closed = 0;
@@ -103,7 +103,7 @@ export class PondDO extends DurableObject {
       }
     }
     if (closed) this.announceOnline();
-    if (sockets.length > closed) await this.ctx.storage.setAlarm(now + 60 * 1000);
+    if (sockets.length > closed) await this.ctx.storage.setAlarm(now + 30 * 1000);
   }
 
   // 자기소개(hello)와 몸짓(emote: 응원·헤엄·이동)

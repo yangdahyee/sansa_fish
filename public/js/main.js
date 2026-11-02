@@ -140,7 +140,9 @@ async function main() {
   $('onlinePill').onclick = () => {
     const names = [...online.values()].map((u) => u.name);
     const n = Math.max(1, stats.online || 0);
-    if (names.length) toast(`🐟 지금 연못에: 나, ${names.slice(0, 6).join(', ')}${names.length > 6 ? ` 외 ${names.length - 6}명` : ''}`);
+    const me = myTabs ? `나(탭 ${myTabs + 1}개)` : '나';
+    if (names.length) toast(`🐟 지금 연못에: ${me}, ${names.slice(0, 6).join(', ')}${names.length > 6 ? ` 외 ${names.length - 6}명` : ''}`);
+    else if (myTabs) toast(`🐟 지금 ${n}명 · 모두 이 기기에서 연 탭이에요`);
     else if (n > 1) toast(`🐟 지금 ${n}명이 있어요 · 다른 분은 아직 연못에 들어오는 중이에요`); // 접속 수는 먼저, 이름은 조금 뒤에 옴
     else toast('🐟 지금은 나 혼자 연못에 있어요');
   };
@@ -337,6 +339,7 @@ async function main() {
   };
   live.on('open', () => sendHello(true));
   let myKey = null; // 같은 브라우저(나)의 다른 탭·앱을 알아보는 값
+  let myTabs = 0; // 지금 열려 있는 내 다른 탭 수
   live.on('you', ({ k }) => {
     myKey = k || null;
   });
@@ -347,7 +350,12 @@ async function main() {
   live.on('presence', ({ users, n }) => {
     const before = new Map(online);
     online.clear();
-    for (const u of users) if (u.pid !== myPid && !(myKey && u.k === myKey)) online.set(u.pid, u); // 내 다른 탭은 빼고
+    myTabs = 0;
+    for (const u of users) {
+      if (u.pid === myPid) continue;
+      if (myKey && u.k === myKey) myTabs++; // 내 다른 탭: 사람 수엔 들어가지만 내 연못엔 안 그림
+      else online.set(u.pid, u);
+    }
     stats.online = n;
     renderStats();
     syncPresence();
@@ -1277,6 +1285,7 @@ async function main() {
   renderStats();
   world.balanceNpcs();
   setTimeout(() => $('steerHint').classList.add('fade'), 25000); // 안내는 잠시 뒤 사라짐
+  live.bindLeave();
   live.connect();
   openPanel(!mobile()); // 휴대폰은 연못 화면부터 (아래 작은 막대에서 소원 빌기·먹이)
 

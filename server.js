@@ -35,7 +35,7 @@ function broadcast(msg) {
   const s = JSON.stringify(msg);
   for (const ws of sockets) if (ws.readyState === 1) ws.send(s);
 }
-// 지금 연못에 있는 사람들: 같은 사람(같은 브라우저)의 여러 연결은 하나로
+// 지금 연못에 있는 사람들 (열린 연결 하나 = 한 명)
 const presence = () => summarizePresence([...sockets].map((ws) => ({ pid: ws.pid, key: ws.key, profile: ws.profile, at: ws.at })));
 // 자기소개를 보낸 연결만 목록에
 let onlineTimer = null;
