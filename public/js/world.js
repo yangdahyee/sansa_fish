@@ -1032,7 +1032,11 @@ class SkyFish {
       if (o.isMesh) {
         o.frustumCulled = false;
         o.material = o.material.clone();
-        o.material.transparent = false;
+        // 아래 연못 물고기처럼 하늘 연못 수면 뒤에 그려서 색이 뿌옇게 빠지지 않게
+        o.material.transparent = true;
+        o.material.opacity = 1;
+        o.material.depthWrite = true;
+        o.renderOrder = 2.5;
         if (o.material.emissive) o.material.emissive.setRGB(1, 0.62, 0.15).multiplyScalar(0.32); // 금빛
       }
     });
