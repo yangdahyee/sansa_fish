@@ -283,6 +283,23 @@ export class Pond {
       return json(200, { goal: this.goal, wish: this.view(w, who), becameStar });
     }
 
+    // 내 이름 바꾸기: 거르기 통과하면 내 소원들(헤엄치는·이루어진)의 이름도 함께 바꿈
+    if (p === '/api/name' && method === 'POST') {
+      const who = await hashUid(body.uid);
+      if (!who) return json(400, { error: 'bad_uid' });
+      const name = clampStr(body.name, 12);
+      if (!name) return json(400, { error: 'empty' });
+      if (checkText(name)) return json(400, { error: 'bad_name' });
+      if (this.limited(`n:${who}`, 20, 3600 * 1000) || this.limited(`ni:${ip}`, 200, 3600 * 1000)) return json(429, { error: 'too_many' });
+      for (const w of this.wishes) {
+        if (w.owner !== who || w.name === name) continue;
+        w.name = name;
+        await this.persist(w);
+        if (!w.hidden) this.broadcast({ t: 'wish:name', id: w.id, name });
+      }
+      return json(200, { ok: true, name });
+    }
+
     // 내 소원 지우기 (헤엄치는 소원이든 별이든, 주인만)
     const del = /^\/api\/wishes\/([a-f0-9]{8,16})\/delete$/.exec(p);
     if (del && method === 'POST') {

@@ -59,6 +59,18 @@
   <!-- 내 소원 패널 -->
   <aside id="panel" class="panel">
     <button class="close panel-close mobile-only" id="panelClose" aria-label="닫기">×</button>
+    <!-- 내 이름: 다른 사람에게 보이는 이름표 (바꾸면 내 소원들 이름도 함께) -->
+    <div class="me-row" id="meRow">
+      <span class="me-label">내 이름</span>
+      <span id="meName" class="me-name"></span>
+      <button id="btnRename" class="link" title="이름 바꾸기">✏️ 바꾸기</button>
+      <button id="btnReroll" class="link" title="새 이름 뽑기">🎲</button>
+    </div>
+    <form class="me-edit" id="meEdit" hidden>
+      <input id="meInput" maxlength="12" placeholder="연못에서 쓸 이름 (12자까지)" autocomplete="off" />
+      <button type="submit" class="primary small">저장</button>
+      <button type="button" id="meCancel" class="small">취소</button>
+    </form>
     <!-- 소원이 없을 때 -->
     <section id="releaseView" hidden>
       <h2>소원 하나를 물고기에 담아 보세요</h2>
@@ -99,11 +111,8 @@
       <div class="panel-foot"><button id="btnDeleteMine" class="link">소원 지우기</button></div>
     </section>
 
-    <!-- 이루어진 내 소원 -->
-    <section id="myStars" class="my-stars" hidden>
-      <h3>이루어진 내 소원</h3>
-      <ul id="myStarList"></ul>
-    </section>
+    <!-- 이루어진 내 소원: 목록 대신 하늘 연못에서 내 물고기를 찾아감 (누를 때마다 다음 물고기) -->
+    <button id="myStars" class="my-stars-btn" hidden></button>
   </aside>
 
   <!-- 소원 카드 (물고기를 눌렀을 때) -->

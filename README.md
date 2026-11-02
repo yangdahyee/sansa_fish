@@ -26,6 +26,10 @@
 - **반짝이 뿌리기** — 빈 물을 누르면 금빛 반짝이가 떨어지고 가까운 물고기 네 마리가 몰려옵니다. 지금 접속한 사람들의 화면에도 똑같이 보입니다.
 - 물고기 몸 색은 그대로 두고 (덧칠하면 바래 보임), 수면 뒤에 그려 물빛만 깊이만큼 입힙니다.
 
+**내 이름** — 처음 들어오면 ‘색 + 물 단어’ 이름이 자동으로 정해지고(400가지), 패널 맨 위에서 **✏️ 바꾸기**로 직접 적거나 **🎲**로 다시 뽑을 수 있습니다. 바꾸면 이름표와 내 소원들(헤엄치는·이루어진)의 이름도 함께 바뀌어 다른 사람 화면에도 곧바로 보입니다. 욕설·광고 같은 이름은 소원 글과 같은 기준으로 막습니다 (`POST /api/name`).
+
+**이루어진 내 소원** — 목록 대신 패널의 **✦ 이루어진 내 소원 n개 · 하늘 연못에서 보기** 버튼 하나. 누르면 하늘 연못으로 올라가 내 물고기를 따라가고, 한 번 더 누르면 다음 소원으로 넘어갑니다.
+
 **내 소원 지우기** — 헤엄치는 소원이든 하늘 연못의 소원이든 주인만 지울 수 있습니다 (패널·카드·목록의 🗑).
 
 버튼 하나로 **소원 모아 보기**(헤엄치는 소원 / 이루어진 소원 / 내 소원, 새로운 순·곧 이루어질 순)도 열 수 있습니다.
@@ -92,7 +96,7 @@
 
 - 방문자는 브라우저가 만든 익명 아이디를 **해시로만** 보관합니다.
 - 한 사람당 헤엄치는 소원은 한 번에 하나, 소원이 이루어지면 새 소원을 띄울 수 있습니다.
-- REST: `GET /api/stats`, `GET /api/wishes?status=swimming|star&sort=mix|new|near|recent`, `GET /api/wishes?mine=1`, `GET /api/wishes/:id`, `POST /api/wishes`, `POST /api/wishes/:id/feed`, `POST /api/wishes/:id/report`, `POST /api/wishes/:id/delete` (주인만)
+- REST: `POST /api/name` (내 이름 바꾸기), `GET /api/stats`, `GET /api/wishes?status=swimming|star&sort=mix|new|near|recent`, `GET /api/wishes?mine=1`, `GET /api/wishes/:id`, `POST /api/wishes`, `POST /api/wishes/:id/feed`, `POST /api/wishes/:id/report`, `POST /api/wishes/:id/delete` (주인만)
 - 관리자: `GET /api/admin/stats`, `GET /api/admin/wishes?filter=&q=`, `POST /api/admin/wishes/:id {action}`, `GET /api/admin/export` (헤더 `Authorization: Bearer <ADMIN_TOKEN>`)
 - 방문자 아이디는 `x-pond-uid` 헤더로 주고받습니다 (주소창·서버 기록에 남지 않게)
 - WebSocket(`/ws`): 서버 → 새 소원·먹이·별·지금 있는 사람(`presence`)·몸짓(`emote`), 클라이언트 → 자기소개(`hello`: 이름·물고기·소원)·몸짓(응원·헤엄·이동). 규칙은 `core/presence.js` (이름 거르기, 몸짓 간격 제한)

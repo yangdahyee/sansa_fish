@@ -5,7 +5,7 @@
 //  하늘 연못 : 먹이를 GOAL 번 받아 폭포를 오른 소원 (금빛 물고기)
 import { World } from './world.js';
 import { Live } from './live.js';
-import { SPECIES, SPECIES_IDS, PHRASES } from './data.js';
+import { SPECIES, SPECIES_IDS, PHRASES, randomName } from './data.js';
 import { state, save } from './store.js';
 import { sfx, setSound, isSoundOn, buzz } from './sound.js';
 
@@ -208,30 +208,68 @@ async function main() {
         : `✨ 먹이 ${w.feeds} / ${GOAL} · ${GOAL - w.feeds}번 더 주면 소원이 이루어져요`;
     }
     $('myStars').hidden = myStars.length === 0;
-    const ul = $('myStarList');
-    ul.textContent = '';
-    myStars.forEach((w) => {
-      const li = document.createElement('li');
-      const t = document.createElement('span');
-      t.textContent = `${w.text || '마음속 소원'} (${fmtDate(w.starAt)})`;
-      t.className = 'star-link';
-      t.title = '하늘에서 보기';
-      t.onclick = () => {
-        showStar(w, true);
-        openCard({ ...w, status: 'star', mine: true });
-      };
-      const x = document.createElement('button');
-      x.className = 'link';
-      x.textContent = '지우기';
-      x.onclick = () => deleteWish(w.id);
-      li.append(t, x);
-      ul.appendChild(li);
-    });
+    $('myStars').textContent = `✦ 이루어진 내 소원 ${myStars.length}개 · 하늘 연못에서 보기`;
+    $('meName').textContent = state.name;
     syncAvatar();
     applyFollow();
     renderMini();
     sendHello();
   }
+
+  // ---------- 이루어진 내 소원: 하늘 연못에서 하나씩 찾아가기 ----------
+  let myStarIdx = 0;
+  $('myStars').onclick = () => {
+    if (!myStars.length) return;
+    const w = myStars[myStarIdx++ % myStars.length];
+    if (mobile()) openPanel(false);
+    showStar(w, true);
+    openCard({ ...w, status: 'star', mine: true });
+    if (myStars.length > 1) toast(`✦ ${((myStarIdx - 1) % myStars.length) + 1} / ${myStars.length} · 한 번 더 누르면 다음 소원`);
+  };
+
+  // ---------- 내 이름 바꾸기 ----------
+  function showNameEdit(on) {
+    $('meEdit').hidden = !on;
+    $('meRow').hidden = on;
+    if (on) {
+      $('meInput').value = state.name;
+      $('meInput').focus();
+      $('meInput').select();
+    }
+  }
+  async function setName(name) {
+    try {
+      const r = await api('/api/name', { name });
+      state.name = r.name;
+      save();
+      if (myWish) myWish = { ...myWish, name: r.name };
+      myStars = myStars.map((w) => ({ ...w, name: r.name }));
+      for (const w of wishes.values()) if (w.mine) w.name = r.name;
+      if (myWish) world.getFish(myWish.id)?.setData({ name: r.name });
+      world.getFish(AVATAR)?.setData({ name: r.name });
+      renderPanel();
+      sendHello(); // 다른 사람 화면의 이름표도
+      toast(`🐟 이제 ‘${r.name}’(이)에요`);
+      return true;
+    } catch (e) {
+      toast({ bad_name: '그 이름은 쓸 수 없어요. 다른 이름으로 해 주세요', empty: '이름을 적어 주세요', too_many: '잠시 뒤 다시 바꿔 주세요' }[e.code] || '이름을 바꾸지 못했어요');
+      return false;
+    }
+  }
+  $('btnRename').onclick = () => showNameEdit(true);
+  $('meCancel').onclick = () => showNameEdit(false);
+  $('meEdit').onsubmit = async (e) => {
+    e.preventDefault();
+    const name = $('meInput').value.trim();
+    if (name === state.name) return showNameEdit(false);
+    if (await setName(name)) showNameEdit(false);
+  };
+  $('btnReroll').onclick = async () => {
+    let name = randomName();
+    for (let i = 0; i < 5 && name === state.name; i++) name = randomName();
+    sfx.bubble();
+    await setName(name);
+  };
 
   // ---------- 지금 연못에 있는 사람들 ----------
   let myPid = null;
@@ -1202,6 +1240,14 @@ async function main() {
     if (cardId === id) openCard(w);
   });
   live.on('wish:hide', ({ id }) => dropWish(id));
+  // 누군가 이름을 바꿈 → 그 사람 소원 물고기의 이름표도
+  live.on('wish:name', ({ id, name }) => {
+    const w = wishes.get(id);
+    if (w) w.name = name;
+    world.getFish(id)?.setData({ name });
+    const sf = world.getSkyFish(id);
+    if (sf) sf.data.name = name;
+  });
   live.on('wish:star', ({ wish }) => {
     const known = wishes.get(wish.id);
     onStar({ ...known, ...wish, mine: known?.mine || myWish?.id === wish.id });
