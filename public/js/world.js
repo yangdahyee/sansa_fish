@@ -73,6 +73,8 @@ function hitsBridge(p, r) {
   const y = bridgeY(clamp(u, -BRIDGE_SPAN, BRIDGE_SPAN));
   return p.y + r > y - BRIDGE_UNDER && p.y - r < y + BRIDGE_TOP;
 }
+// 계절 장식: 'christmas' 면 하늘 연못에 눈·트리·전구 (null 이면 장식 없음)
+const SKY_SEASON = 'christmas';
 // 한 번에 헤엄치는 물고기 수 (오래된 소원부터 쉬러 감 — 목록·내 소원에서 부르면 다시 나옴)
 const SKY_MAX = /Mobi|Android/i.test(globalThis.navigator?.userAgent || '') ? 24 : 40;
 
@@ -1867,7 +1869,11 @@ export class World {
     g.position.set(SKY_X, SKY_Y, SKY_Z);
     this.skyPond = g;
     this.skyUnder = { value: 0 }; // 하늘 연못은 늘 물 밖에서 봄 (아래 연못에 잠수해도 영향 없게)
-    const rockM = makeMossyRockMaterial({ color: 0x5a6470, moss: 0x3f6d4a, amount: 0.8 });
+    // 크리스마스엔 바위 윗면에 눈이 쌓인 것처럼 (이끼 자리에 흰 눈)
+    const rockM =
+      SKY_SEASON === 'christmas'
+        ? makeMossyRockMaterial({ color: 0x5a6470, moss: 0xf4f8ff, amount: 1 })
+        : makeMossyRockMaterial({ color: 0x5a6470, moss: 0x3f6d4a, amount: 0.8 });
     const underM = makeMossyRockMaterial({ color: 0x3a434e, moss: 0x2f4f3a, amount: 0.5 });
 
     // 섬 아랫부분: 여기저기 매달린 바위 덩이 (아래 연못에서 올려다보면 구름 위에 뜬 섬)
@@ -2032,6 +2038,7 @@ export class World {
     }
     this.buildCloudBridge(g, rockM);
     this.buildSkyLights(g);
+    if (SKY_SEASON === 'christmas') this.buildChristmas(g);
     this.scene.add(g);
   }
 
@@ -2058,6 +2065,10 @@ export class World {
       pillar.position.y = -SKY_DEPTH / 2 - 0.2;
       isle.add(pillar);
       for (let k = 0; k < 4; k++) {
+        if (SKY_SEASON === 'christmas') {
+          isle.add(this.makeFir(rand(1.1, 1.8), rand(-1.2, 1.2), rand(0.6, 1), rand(-1.2, 1.2)));
+          continue;
+        }
         const b = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(0.4, 0.7), 0), bushM);
         b.position.set(rand(-1.2, 1.2), rand(0.9, 1.3), rand(-1.2, 1.2));
         isle.add(b);
@@ -2069,6 +2080,7 @@ export class World {
     g.position.set(BRIDGE_X, 0, BRIDGE_Z);
     g.rotation.y = BRIDGE_ROT; // 다리 기준 좌표 (x=u, z=v)
     parent.add(g);
+    this.bridgeGroup = g;
     const span = BRIDGE_SPAN;
     const W = BRIDGE_W;
     const steps = 40;
@@ -2160,6 +2172,208 @@ export class World {
         this.bridgeLamps.push(s);
       }
     }
+  }
+
+  // ---------- 크리스마스 장식 (SKY_SEASON 을 null 로 바꾸면 모두 빠짐) ----------
+  // 눈 덮인 작은 전나무 (바위섬·트리 둘레)
+  makeFir(h, x, y, z) {
+    this._firM ??= new THREE.MeshStandardMaterial({ color: 0x1f5a3a, roughness: 0.9, flatShading: true });
+    this._snowM ??= new THREE.MeshStandardMaterial({ color: 0xf6f9ff, roughness: 0.8, flatShading: true, emissive: 0x30343c });
+    const t = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const r = h * (0.42 - i * 0.1);
+      const c = new THREE.Mesh(new THREE.ConeGeometry(r, h * 0.45, 7), this._firM);
+      c.position.y = h * (0.25 + i * 0.22);
+      t.add(c);
+      const sn = new THREE.Mesh(new THREE.ConeGeometry(r * 0.55, h * 0.16, 7), this._snowM);
+      sn.position.y = c.position.y + h * 0.16;
+      t.add(sn);
+    }
+    t.position.set(x, y, z);
+    t.rotation.y = rand(0, 6);
+    return t;
+  }
+
+  buildChristmas(g) {
+    const x = { lights: [] };
+    this.xmas = x;
+    // 1) 내리는 눈: 하늘 연못 위를 덮는 눈송이 (점 하나 = 눈송이 하나, 한 번에 그림)
+    const N = 900;
+    const pos = new Float32Array(N * 3);
+    x.snowSeed = [];
+    for (let i = 0; i < N; i++) {
+      pos[i * 3] = rand(-SKY_RX - 6, SKY_RX + 6);
+      pos[i * 3 + 1] = rand(-2, 16);
+      pos[i * 3 + 2] = rand(-SKY_RZ - 6, SKY_RZ + 10);
+      x.snowSeed.push({ sp: rand(0.5, 1.1), ph: rand(0, 6), sw: rand(0.2, 0.6) });
+    }
+    const sg = new THREE.BufferGeometry();
+    sg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    x.snow = new THREE.Points(
+      sg,
+      new THREE.PointsMaterial({ map: this.glowTex, color: 0xffffff, size: 0.28, transparent: true, opacity: 0.9, depthWrite: false, sizeAttenuation: true }),
+    );
+    x.snow.frustumCulled = false;
+    g.add(x.snow);
+
+    // 2) 큰 크리스마스트리: 뒤쪽 물가 가운데
+    const tree = new THREE.Group();
+    // 뒤쪽 물가의 땅 위 (섬 타원을 따라 휘어 있으니 x 에 따라 z 를 맞춤)
+    const shoreZ = (sx) => -(SKY_RZ + 0.85) * Math.sqrt(Math.max(0, 1 - (sx / (SKY_RX + 0.85)) ** 2));
+    tree.position.set(0, 0.25, shoreZ(0));
+    const onShore = (sx) => shoreZ(sx) - tree.position.z; // 트리 기준 z
+    const H = 8.5;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.45, 1.2, 8), new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 1 }));
+    trunk.position.y = 0.6;
+    tree.add(trunk);
+    const firM = new THREE.MeshStandardMaterial({ color: 0x1d5b3a, roughness: 0.85, flatShading: true });
+    const tiers = [
+      [3.3, 3.0, 1.0],
+      [2.7, 2.8, 2.6],
+      [2.0, 2.5, 4.1],
+      [1.25, 2.2, 5.5],
+    ]; // [밑 반지름, 높이, 밑 높이]
+    const snowM = new THREE.MeshStandardMaterial({ color: 0xf6f9ff, roughness: 0.8, flatShading: true, emissive: 0x2a2e36 });
+    for (const [r, h, y0] of tiers) {
+      const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 10), firM);
+      c.position.y = y0 + h / 2;
+      tree.add(c);
+      const sn = new THREE.Mesh(new THREE.ConeGeometry(r * 0.42, h * 0.3, 10), snowM); // 끝에 쌓인 눈
+      sn.position.y = y0 + h * 0.87;
+      tree.add(sn);
+    }
+    // 오너먼트: 빨강·금·파랑·은 구슬
+    const ornG = new THREE.SphereGeometry(0.17, 12, 10);
+    const ornM = new THREE.MeshStandardMaterial({ roughness: 0.2, metalness: 0.55, emissive: 0x151515 });
+    const orn = new THREE.InstancedMesh(ornG, ornM, 46);
+    const cols = [0xd8243a, 0xf2c14e, 0x2f6fe0, 0xe6e9f0, 0xd8243a, 0xf2c14e];
+    const m = new THREE.Matrix4();
+    const surf = (frac) => {
+      // 트리 겉면의 한 점 (높이 비율 frac 에서의 반지름)
+      for (const [r, h, y0] of tiers) {
+        const y = frac * H;
+        if (y >= y0 && y <= y0 + h * 0.85) return [y, r * (1 - (y - y0) / h)];
+      }
+      return [frac * H, 0.5];
+    };
+    for (let i = 0; i < orn.count; i++) {
+      const [y, r] = surf(rand(0.14, 0.82));
+      const a = rand(0, Math.PI * 2);
+      m.makeTranslation(Math.cos(a) * (r + 0.08), y, Math.sin(a) * (r + 0.08));
+      orn.setMatrixAt(i, m);
+      orn.setColorAt(i, new THREE.Color(cols[i % cols.length]));
+    }
+    tree.add(orn);
+    // 트리를 감는 전구 줄 (나선)
+    const lp = [];
+    const lc = [];
+    const bulb = [0xff4d5e, 0xffd27a, 0x58e08a, 0x6fb2ff];
+    for (let i = 0; i < 120; i++) {
+      const f = 0.12 + (i / 120) * 0.72;
+      const [y, r] = surf(f);
+      const a = i * 0.55;
+      lp.push(Math.cos(a) * (r + 0.1), y, Math.sin(a) * (r + 0.1));
+      const c = new THREE.Color(bulb[i % 4]);
+      lc.push(c.r, c.g, c.b);
+    }
+    x.lights.push(this.makeBulbs(lp, lc, 0.55, tree));
+    // 꼭대기 별
+    const star = new THREE.Shape();
+    for (let i = 0; i < 10; i++) {
+      const rr = i % 2 ? 0.28 : 0.7;
+      const a = (i / 10) * Math.PI * 2 + Math.PI / 2;
+      if (i === 0) star.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      else star.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    const starG = new THREE.ExtrudeGeometry(star, { depth: 0.18, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.05, bevelSegments: 1 });
+    starG.center();
+    const starM = new THREE.MeshStandardMaterial({ color: 0xffd34d, emissive: 0xffb020, emissiveIntensity: 0.9, metalness: 0.4, roughness: 0.3 });
+    const starMesh = new THREE.Mesh(starG, starM);
+    starMesh.position.y = H + 0.45;
+    tree.add(starMesh);
+    x.star = starMesh;
+    const starGlow = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffe08a, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    starGlow.scale.setScalar(4.5);
+    starGlow.position.y = H + 0.45;
+    tree.add(starGlow);
+    x.starGlow = starGlow;
+    // 선물 상자
+    const ribbonM = this.goldMat();
+    const giftCols = [0xc62f3a, 0x2f7d4f, 0x3a6fd0, 0xf0e6d6, 0x9c3fb0, 0xc62f3a];
+    for (let i = 0; i < 6; i++) {
+      const s = rand(0.55, 0.95);
+      const box = new THREE.Group();
+      box.add(new THREE.Mesh(new THREE.BoxGeometry(s, s * 0.8, s), new THREE.MeshStandardMaterial({ color: giftCols[i], roughness: 0.6 })));
+      const r1 = new THREE.Mesh(new THREE.BoxGeometry(s * 1.02, s * 0.82, s * 0.16), ribbonM);
+      const r2 = new THREE.Mesh(new THREE.BoxGeometry(s * 0.16, s * 0.82, s * 1.02), ribbonM);
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(s * 0.14, s * 0.05, 6, 12), ribbonM);
+      bow.position.y = s * 0.45;
+      box.add(r1, r2, bow);
+      const gx = (i < 3 ? -1 : 1) * (2.0 + (i % 3) * 0.8); // 트리 양옆 아래
+      box.position.set(gx, s * 0.4, onShore(gx) + rand(-0.2, 0.3));
+      box.rotation.y = rand(-0.5, 0.5);
+      tree.add(box);
+    }
+    // 트리 둘레 작은 전나무
+    for (const fx of [-4.8, 4.8, -6.6, 6.6]) tree.add(this.makeFir(rand(2.2, 3.2), fx, 0, onShore(fx) - 0.2));
+    g.add(tree);
+
+    // 3) 구름다리 난간을 따라 전구 줄
+    const bp = [];
+    const bc = [];
+    for (const side of [-1, 1]) {
+      for (let i = 0; i <= 60; i++) {
+        const u = -BRIDGE_SPAN + (i / 60) * BRIDGE_SPAN * 2;
+        bp.push(u, bridgeY(u) + 0.66 - Math.abs(Math.sin(i * 0.9)) * 0.08, side * (BRIDGE_W / 2 - 0.08));
+        const c = new THREE.Color(bulb[(i + (side > 0 ? 2 : 0)) % 4]);
+        bc.push(c.r, c.g, c.b);
+      }
+    }
+    x.lights.push(this.makeBulbs(bp, bc, 0.42, this.bridgeGroup));
+  }
+
+  // 반짝이는 전구 여러 개를 점 하나씩으로 (한 번에 그림). 색 배열은 반짝임 계산용으로 따로 둠
+  makeBulbs(posArr, colArr, size, parent) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colArr.slice(), 3));
+    const pts = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({ map: this.glowTex, size, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true }),
+    );
+    pts.frustumCulled = false;
+    parent.add(pts);
+    return { pts, base: colArr, ph: posArr.map(() => rand(0, 6)) };
+  }
+
+  updateChristmas(dt, time, skyOn) {
+    const x = this.xmas;
+    if (!x) return;
+    // 눈: 하늘 연못을 볼 때만 움직임 (멀리서는 거의 안 보여서 아낌)
+    if (skyOn) {
+      const p = x.snow.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const s = x.snowSeed[i];
+        let y = p.getY(i) - s.sp * dt;
+        if (y < -0.2) y = 16;
+        p.setY(i, y);
+        p.setX(i, p.getX(i) + Math.sin(time * 0.8 + s.ph) * s.sw * dt);
+      }
+      p.needsUpdate = true;
+    }
+    // 전구: 하나하나 다른 박자로 반짝
+    for (const L of x.lights) {
+      const c = L.pts.geometry.attributes.color;
+      for (let i = 0; i < c.count; i++) {
+        const k = 0.45 + 0.55 * (Math.sin(time * 2.6 + L.ph[i * 3]) * 0.5 + 0.5);
+        c.setXYZ(i, L.base[i * 3] * k, L.base[i * 3 + 1] * k, L.base[i * 3 + 2] * k);
+      }
+      c.needsUpdate = true;
+    }
+    x.star.rotation.y = time * 0.6;
+    x.starGlow.material.opacity = 0.7 + Math.sin(time * 2) * 0.15;
   }
 
   // 금 (왕관·다리 난간·석등 장식이 함께 씀)
@@ -3807,6 +4021,7 @@ export class World {
     this.skyAura.material.opacity = 0.26 + Math.sin(time * 0.8) * 0.06;
     for (const L of this.bridgeLamps) L.material.opacity = 0.7 + Math.sin(time * 3 + L.userData.ph) * 0.2;
     this.bridgeOrb.material.opacity = 0.6 + Math.sin(time * 1.7) * 0.2;
+    this.updateChristmas(dt, time, skyOn);
     for (const lan of this.skyLanterns) {
       const u = lan.userData;
       const a = time * u.sp + u.ph;
