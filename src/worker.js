@@ -3,7 +3,7 @@
 // 연못 하나를 맡은 Durable Object(PondDO)로 간다. 규칙은 core/pond.js (Node 서버와 같은 코드).
 import { DurableObject } from 'cloudflare:workers';
 import { Pond } from '../core/pond.js';
-import { newPid, cleanProfile, cleanEmote, EMOTE_GAP_MS } from '../core/presence.js';
+import { newPid, cleanProfile, cleanEmote, EMOTE_GAP_MS, personKey, summarizePresence, STALE_MS } from '../core/presence.js';
 
 export default {
   async fetch(request, env) {
@@ -27,8 +27,10 @@ export class PondDO extends DurableObject {
       // 관리자 비밀번호: Cloudflare 대시보드 → Settings → Variables and Secrets → ADMIN_TOKEN (Secret)
       adminToken: env.ADMIN_TOKEN || '',
       broadcast: (msg) => this.broadcast(msg),
-      online: () => ctx.getWebSockets().length,
+      online: () => this.presence().n,
     });
+    // 브라우저가 25초마다 보내는 'ping' 에 잠든 채로 'pong' 으로 답함 (깨우지 않아 요금이 들지 않음)
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     // 깨어날 때 저장된 소원을 모두 불러옴
     ctx.blockConcurrencyWhile(async () => {
       const all = await ctx.storage.list({ prefix: 'w:' });
@@ -45,10 +47,13 @@ export class PondDO extends DurableObject {
       this.ctx.acceptWebSocket(pair[1]);
       // 잠들었다 깨어나도 누가 누군지 남도록 연결마다 정보를 붙여 둠
       const pid = newPid();
-      pair[1].serializeAttachment({ pid, profile: null });
+      const now = Date.now();
+      pair[1].serializeAttachment({ pid, profile: null, key: null, at: now, seen: now });
       pair[1].send(JSON.stringify({ t: 'welcome', pid }));
-      pair[1].send(JSON.stringify({ t: 'online', n: this.ctx.getWebSockets().length }));
+      pair[1].send(JSON.stringify({ t: 'online', n: this.presence().n }));
       this.announceOnline();
+      // 끊긴 연결 정리를 위해 1분마다 확인 (연결이 남아 있는 동안만)
+      if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(now + 60 * 1000);
       return new Response(null, { status: 101, webSocket: pair[0] });
     }
     return this.pond.handle(request, request.headers.get('cf-connecting-ip') || '?');
@@ -63,18 +68,42 @@ export class PondDO extends DurableObject {
     }
   }
 
-  // 지금 연못에 있는 사람들 (자기소개를 보낸 열린 연결만)
+  // 지금 연못에 있는 사람들: 열린 연결 중 같은 사람(같은 브라우저)은 하나로
+  presence() {
+    const conns = [];
+    for (const ws of this.ctx.getWebSockets()) {
+      if (ws.readyState !== 1) continue;
+      const a = ws.deserializeAttachment();
+      if (a) conns.push(a);
+    }
+    return summarizePresence(conns);
+  }
+
   announceOnline() {
     clearTimeout(this.onlineTimer);
     this.onlineTimer = setTimeout(() => {
-      const open = this.ctx.getWebSockets().filter((ws) => ws.readyState === 1);
-      const users = [];
-      for (const ws of open) {
-        const a = ws.deserializeAttachment();
-        if (a?.profile) users.push({ pid: a.pid, ...a.profile });
-      }
-      this.broadcast({ t: 'presence', users, n: open.length });
+      const { users, n } = this.presence();
+      this.broadcast({ t: 'presence', users, n });
     }, 250);
+  }
+
+  // 1분마다: 오래 신호가 없는 연결(폰 화면 꺼짐·앱 내림·네트워크 끊김)을 닫아 사람 수에서 뺌
+  async alarm() {
+    const now = Date.now();
+    let closed = 0;
+    const sockets = this.ctx.getWebSockets();
+    for (const ws of sockets) {
+      const a = ws.deserializeAttachment() || {};
+      const pong = this.ctx.getWebSocketAutoResponseTimestamp(ws)?.getTime() || 0;
+      if (now - Math.max(a.seen || 0, a.at || 0, pong) > STALE_MS) {
+        try {
+          ws.close(4000, 'stale');
+        } catch (_) {}
+        closed++;
+      }
+    }
+    if (closed) this.announceOnline();
+    if (sockets.length > closed) await this.ctx.storage.setAlarm(now + 60 * 1000);
   }
 
   // 자기소개(hello)와 몸짓(emote: 응원·헤엄·이동)
@@ -85,10 +114,14 @@ export class PondDO extends DurableObject {
     } catch (_) {
       return;
     }
-    const a = ws.deserializeAttachment() || { pid: newPid(), profile: null };
+    const a = ws.deserializeAttachment() || { pid: newPid(), profile: null, at: Date.now() };
+    a.seen = Date.now();
     if (m?.t === 'hello') {
       a.profile = cleanProfile(m.profile);
+      a.key = (await personKey(m.uid)) || a.key || null;
+      a.at = Date.now();
       ws.serializeAttachment(a);
+      ws.send(JSON.stringify({ t: 'you', k: a.key })); // 내 다른 탭·앱을 다른 사람으로 그리지 않게
       this.announceOnline();
     } else if (m?.t === 'emote' && a.profile) {
       const e = cleanEmote(m);

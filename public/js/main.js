@@ -242,7 +242,7 @@ async function main() {
     const key = JSON.stringify(profile);
     if (!force && key === lastHello) return;
     lastHello = key;
-    live.send({ t: 'hello', profile });
+    live.send({ t: 'hello', profile, uid: state.uid }); // uid: 같은 브라우저의 여러 탭을 한 사람으로 (서버는 해시만 씀)
   }
   const myFish = () => world.getFish(myWish?.id) || world.getFish(AVATAR);
   // 접속한 사람의 물고기: 소원이 연못에 있으면 그 물고기, 없으면 그 사람만의 물고기(p:아이디)
@@ -336,6 +336,10 @@ async function main() {
     setFollow(pid === followPid ? null : pid);
   };
   live.on('open', () => sendHello(true));
+  let myKey = null; // 같은 브라우저(나)의 다른 탭·앱을 알아보는 값
+  live.on('you', ({ k }) => {
+    myKey = k || null;
+  });
   live.on('welcome', ({ pid }) => {
     myPid = pid;
     sendHello(true);
@@ -343,7 +347,7 @@ async function main() {
   live.on('presence', ({ users, n }) => {
     const before = new Map(online);
     online.clear();
-    for (const u of users) if (u.pid !== myPid) online.set(u.pid, u);
+    for (const u of users) if (u.pid !== myPid && !(myKey && u.k === myKey)) online.set(u.pid, u); // 내 다른 탭은 빼고
     stats.online = n;
     renderStats();
     syncPresence();
