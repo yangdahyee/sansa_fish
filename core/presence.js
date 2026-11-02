@@ -3,7 +3,10 @@ import { checkText } from './moderation.js';
 
 const SPECIES = ['berry', 'lemon', 'coral', 'neon'];
 const SWIM_MOVES = ['dash', 'glide', 'circle', 'nibble', 'forage', 'roll', 'wag'];
-export const EMOTE_GAP_MS = { cheer: 700, swim: 600, goto: 200 };
+export const EMOTE_GAP_MS = { cheer: 700, swim: 600, goto: 200, say: 1200 };
+// 정해진 말 개수 (글은 public/js/data.js 의 PHRASES — 개수를 맞출 것). 자유 채팅이 아니라서 거를 필요가 없음
+export const PHRASE_COUNT = 8;
+const PID_RE = /^[a-f0-9]{6,16}$/;
 
 export function newPid() {
   const b = new Uint8Array(6);
@@ -22,14 +25,19 @@ export function cleanProfile(raw) {
     name,
     species: SPECIES.includes(r.species) ? r.species : SPECIES[0],
     wishId: typeof r.wishId === 'string' && /^[a-f0-9]{8,16}$/.test(r.wishId) ? r.wishId : null,
+    // 같이 헤엄치는 상대 (그 사람 물고기 옆에 붙어 다님). 접속 정보에 담아야 새로 온 사람에게도 보임
+    follow: typeof r.follow === 'string' && PID_RE.test(r.follow) ? r.follow : null,
   };
 }
 
-// 몸짓: cheer(응원, to=받는 사람), swim(헤엄 동작), goto(이동 목적지)
+// 몸짓: cheer(응원, to=받는 사람), say(정해진 말, to=받는 사람), swim(헤엄 동작), goto(이동 목적지)
 export function cleanEmote(raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   if (r.kind === 'cheer') {
-    return { kind: 'cheer', to: typeof r.to === 'string' && /^[a-f0-9]{6,16}$/.test(r.to) ? r.to : null, jump: !!r.jump };
+    return { kind: 'cheer', to: typeof r.to === 'string' && PID_RE.test(r.to) ? r.to : null, jump: !!r.jump };
+  }
+  if (r.kind === 'say' && Number.isInteger(r.i) && r.i >= 0 && r.i < PHRASE_COUNT) {
+    return { kind: 'say', i: r.i, to: typeof r.to === 'string' && PID_RE.test(r.to) ? r.to : null };
   }
   if (r.kind === 'swim' && SWIM_MOVES.includes(r.move)) return { kind: 'swim', move: r.move };
   if (r.kind === 'goto' && Array.isArray(r.p) && r.p.length === 3 && r.p.every((v) => Number.isFinite(Number(v)))) {

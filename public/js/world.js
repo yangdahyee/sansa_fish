@@ -306,6 +306,12 @@ class Fish {
     const n = document.createElement('span');
     n.textContent = this.isMe ? (this.data.dream ? `내 소원 · ${name}` : `나 · ${name}`) : name;
     this.tag.appendChild(n);
+    if (this.data.followId) {
+      const f = document.createElement('span');
+      f.className = 'with'; // 누군가와 같이 헤엄치는 중
+      f.textContent = '🐟';
+      this.tag.appendChild(f);
+    }
     if (total) {
       const p = document.createElement('span');
       p.style.opacity = '.8';
@@ -320,10 +326,10 @@ class Fish {
     }
   }
 
-  say(text) {
+  say(text, cls = '') {
     this.sayEl?.remove();
     const el = document.createElement('div');
-    el.className = 'say';
+    el.className = `say ${cls}`.trim();
     el.textContent = text;
     this.world.labels.appendChild(el);
     this.sayEl = el;
@@ -639,7 +645,8 @@ class Fish {
         this.doMove(pickWeighted(AUTO_MOVES));
       }
     }
-    if (sleeping || following) this.move = null;
+    // 따라가는 중에도 응원·헤엄 같은 몸짓은 잠깐 하고, 끝나면 다시 옆으로 붙음
+    if (sleeping) this.move = null;
     if (!this.move) this.yTop = SWIM_TOP; // 동작이 중간에 끊겨도 수면 높이 제한을 되돌림
 
     let desired;

@@ -8,14 +8,16 @@ export const SPECIES = {
 };
 export const SPECIES_IDS = Object.keys(SPECIES);
 
-// 자유 채팅 대신 정해진 말만 (server.js 의 PHRASE_COUNT 와 개수를 맞출 것)
+// 말풍선: 자유 채팅 대신 정해진 말만 (core/presence.js 의 PHRASE_COUNT 와 개수를 맞출 것)
 export const PHRASES = [
-  '응원해요 🙌',
-  '같이 가요 🐟',
-  '오늘 하나 했어요 ✔',
-  '천천히 가도 돼요 🌙',
-  '멋진 꿈이에요 ✨',
-  '잠깐 쉬어 갈게요 💤',
+  '안녕하세요 👋',
+  '힘내요! 💪',
+  '꼭 이루어질 거예요 ✨',
+  '나도 같은 소원이에요 🙏',
+  '같이 헤엄쳐요 🐟',
+  '고마워요 💛',
+  '좋은 밤 되세요 🌙',
+  '또 만나요 👋',
 ];
 
 const COLORS = ['푸른', '붉은', '은빛', '금빛', '노을', '새벽', '달빛', '물빛', '연둣빛', '복숭아'];

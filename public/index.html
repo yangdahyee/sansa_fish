@@ -118,6 +118,7 @@
       <button id="btnReport" class="small report" title="욕설·광고·개인정보 등">🚩 신고</button>
       <button id="btnDelete" class="small report" hidden title="내 소원 지우기">🗑 지우기</button>
       <button id="btnCheerTo" class="small" hidden>💛 응원 보내기</button>
+      <button id="btnFollow" class="small" hidden>🐟 같이 헤엄치기</button>
     </div>
   </div>
 
@@ -130,7 +131,13 @@
     <button id="actWish"><span class="ic">🙏</span><span class="lb">소원</span></button>
     <button id="actFeed"><span class="ic">✨</span><span class="lb">먹이주기</span><span class="badge-n" id="feedBadge" hidden></span></button>
     <button id="actCheer"><span class="ic">💛</span><span class="lb">응원</span></button>
+    <button id="actSay" aria-expanded="false"><span class="ic">💬</span><span class="lb">말</span></button>
   </nav>
+  <!-- 정해진 말 고르기 (💬 말) -->
+  <div id="sayPop" class="say-pop" hidden role="menu" aria-label="말 고르기">
+    <p id="sayTo" class="say-to"></p>
+    <div id="sayList" class="say-list"></div>
+  </div>
 
   <!-- 방생 의식 -->
   <div id="ritual" class="ritual" hidden>

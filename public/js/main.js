@@ -5,7 +5,7 @@
 //  하늘  : 먹이를 GOAL 번 받아 용이 된 소원 (별)
 import { World } from './world.js';
 import { Live } from './live.js';
-import { SPECIES, SPECIES_IDS } from './data.js';
+import { SPECIES, SPECIES_IDS, PHRASES } from './data.js';
 import { state, save } from './store.js';
 import { sfx, setSound, isSoundOn, buzz } from './sound.js';
 
@@ -208,6 +208,7 @@ async function main() {
       ul.appendChild(li);
     });
     syncAvatar();
+    applyFollow();
     renderMini();
     sendHello();
   }
@@ -217,8 +218,9 @@ async function main() {
   let presenceReady = false;
   const online = new Map(); // pid → { name, species, wishId }
   let lastHello = '';
+  let followPid = null; // 내가 같이 헤엄치는 사람
   function sendHello(force = false) {
-    const profile = { name: state.name, species: myWish?.species || pickedSpecies, wishId: myWish?.id || null };
+    const profile = { name: state.name, species: myWish?.species || pickedSpecies, wishId: myWish?.id || null, follow: followPid };
     const key = JSON.stringify(profile);
     if (!force && key === lastHello) return;
     lastHello = key;
@@ -250,24 +252,97 @@ async function main() {
     }
     for (const f of [...world.fishes.values()]) {
       if (f.id.startsWith('p:') && !online.has(f.id.slice(2))) world.removeFish(f.id);
-      else if (f.data.online && !f.id.startsWith('p:') && !onlineWish.has(f.id)) f.setData({ online: false });
+      else if (f.data.online && !f.id.startsWith('p:') && !onlineWish.has(f.id)) f.setData({ online: false, followId: null });
     }
+    // 같이 헤엄치기: 다른 사람끼리, 그리고 나를 따라오는 사람
+    for (const [pid, u] of online) {
+      const f = fishOfUser(pid);
+      if (!f) continue;
+      const leader = !u.follow ? null : u.follow === myPid ? myFish() : fishOfUser(u.follow);
+      const followId = leader && leader !== f ? leader.id : null;
+      if ((f.data.followId || null) !== followId) f.setData({ followId });
+    }
+    applyFollow();
   }
+
+  // ---------- 같이 헤엄치기 ----------
+  // 내 물고기가 그 사람 물고기 옆에 나란히 붙어 다님 (World 의 followId). 접속 정보(hello)에 담아 모두에게 보임
+  function applyFollow() {
+    const me = myFish();
+    if (followPid && !online.has(followPid)) {
+      followPid = null;
+      toast('🐟 같이 헤엄치던 사람이 연못을 떠났어요');
+      sendHello();
+      renderFollowBtn();
+    }
+    const lf = followPid ? fishOfUser(followPid) : null;
+    const followId = lf ? lf.id : null;
+    for (const f of world.fishes.values()) if (f.isMe && f !== me && f.data.followId) f.setData({ followId: null });
+    if (me && (me.data.followId || null) !== followId) me.setData({ followId });
+  }
+  function setFollow(pid) {
+    const u = pid && online.get(pid);
+    if (pid && !u) return;
+    if (u && u.follow === myPid) {
+      toast(`🐟 ${u.name} 님이 이미 내 옆에서 헤엄치고 있어요`);
+      return;
+    }
+    const prev = followPid && online.get(followPid);
+    followPid = pid || null;
+    const me = myFish();
+    if (me && pid) me.manual = null;
+    applyFollow();
+    sendHello();
+    renderFollowBtn();
+    if (u) {
+      sayPhrase(4, pid, true); // "같이 헤엄쳐요 🐟"
+      toast(`🐟 ${u.name} 님과 같이 헤엄쳐요 · 연못을 누르면 그만둬요`);
+      buzz(15);
+    } else if (prev) toast(`${prev.name} 님과 헤어졌어요 👋`);
+  }
+  // 지금 열린 카드의 주인이 접속 중이면 그 사람 아이디
+  function cardPid() {
+    if (cheerTarget && online.has(cheerTarget)) return cheerTarget;
+    if (cardId) for (const [pid, u] of online) if (u.wishId === cardId) return pid;
+    return null;
+  }
+  function renderFollowBtn() {
+    const b = $('btnFollow');
+    const pid = $('wishCard').hidden ? null : cardPid();
+    b.hidden = !pid;
+    b.textContent = pid && pid === followPid ? '👋 그만 헤엄치기' : '🐟 같이 헤엄치기';
+  }
+  $('btnFollow').onclick = () => {
+    const pid = cardPid();
+    if (!pid) return;
+    setFollow(pid === followPid ? null : pid);
+  };
   live.on('open', () => sendHello(true));
   live.on('welcome', ({ pid }) => {
     myPid = pid;
     sendHello(true);
   });
   live.on('presence', ({ users, n }) => {
-    const before = new Set(online.keys());
+    const before = new Map(online);
     online.clear();
     for (const u of users) if (u.pid !== myPid) online.set(u.pid, u);
     stats.online = n;
     renderStats();
     syncPresence();
-    // 새로 들어온 사람 알림 (처음 받는 목록은 조용히)
-    if (presenceReady) for (const [pid, u] of online) if (!before.has(pid)) toast(`🐟 ${u.name} 님이 연못에 들어왔어요`);
+    if (presenceReady) {
+      for (const [pid, u] of online) {
+        // 새로 들어온 사람 알림 (처음 받는 목록은 조용히)
+        if (!before.has(pid)) toast(`🐟 ${u.name} 님이 연못에 들어왔어요`);
+        // 누군가 내 옆에 붙어 같이 헤엄치기 시작
+        if (u.follow === myPid && before.get(pid)?.follow !== myPid) {
+          sfx.bubble();
+          buzz([15, 40, 15]);
+          toast(`🐟 ${u.name} 님이 같이 헤엄쳐요`, 'gold');
+        }
+      }
+    }
     presenceReady = true;
+    renderFollowBtn();
   });
 
   // 다른 사람의 몸짓
@@ -285,6 +360,16 @@ async function main() {
         sfx.chime();
         buzz([20, 50, 20]);
         toast(`💛 ${who?.name || '누군가'} 님이 응원을 보냈어요`, 'gold');
+      }
+    } else if (m.kind === 'say') {
+      const text = PHRASES[m.i];
+      if (!text) return;
+      const toMe = m.to === myPid;
+      f?.say(text, toMe ? 'to-me' : '');
+      if (toMe) {
+        sfx.bubble();
+        buzz(15);
+        toast(`💬 ${who?.name || '누군가'}: ${text}`);
       }
     } else if (m.kind === 'swim') f?.doMove(m.move);
     else if (m.kind === 'goto') world.swimFishTo(f?.id, m.p);
@@ -337,6 +422,8 @@ async function main() {
   function openCard(w) {
     if (!w) return;
     if (mobile()) openPanel(false); // 휴대폰: 카드와 패널이 겹치지 않게 하나만
+    if (cheerTarget) world.getFish(`p:${cheerTarget}`)?.setData({ highlight: false });
+    cheerTarget = null; // 전에 열었던 접속자 카드의 대상이 남지 않게
     $('cardFalls').hidden = false;
     $('btnCheerTo').hidden = !!w.mine || w.status === 'star' || ![...online.values()].some((u) => u.wishId === w.id);
     cardId = w.id;
@@ -362,6 +449,7 @@ async function main() {
     // 물고기 이름표를 잠깐 켜서 어떤 물고기인지 보이게
     for (const f of world.fishes.values()) if (f.data.highlight && f.id !== w.id) f.setData({ highlight: false });
     world.getFish(w.id)?.setData({ highlight: true });
+    renderFollowBtn();
   }
   // 아직 소원이 없는, 지금 접속한 사람의 물고기 카드
   function openPresenceCard(u, f) {
@@ -380,6 +468,12 @@ async function main() {
     f.setData({ highlight: true });
     sfx.bubble();
   }
+  // 접속한 사람 물고기 카드: cheerTarget 을 정한 뒤 버튼을 그림
+  function openPresence(pid, u, f) {
+    openPresenceCard(u, f);
+    cheerTarget = pid;
+    renderFollowBtn();
+  }
 
   function closeCard() {
     if (cheerTarget) world.getFish(`p:${cheerTarget}`)?.setData({ highlight: false });
@@ -395,8 +489,7 @@ async function main() {
     if (f.id.startsWith('p:')) {
       const u = online.get(f.id.slice(2));
       if (!u) return;
-      openPresenceCard(u, f);
-      cheerTarget = f.id.slice(2);
+      openPresence(f.id.slice(2), u, f);
       return;
     }
     if (f.id === AVATAR) {
@@ -413,6 +506,7 @@ async function main() {
   let lastGoto = 0;
   world.onSwimTo = (p) => {
     sfx.bubble();
+    if (followPid) setFollow(null); // 직접 움직이면 같이 헤엄치기는 그만
     const now = performance.now();
     if (now - lastGoto < 220) return;
     lastGoto = now;
@@ -514,6 +608,65 @@ async function main() {
       toast(`💛 ${online.get(to)?.name} 님에게 응원을 보냈어요`);
     } else if (online.size === 0) toast('💛 응원! 다른 사람이 들어오면 함께 보여요');
   };
+  // ---------- 💬 말: 정해진 말풍선 ----------
+  // 카드를 열어 둔 물고기가 지금 접속한 사람이면 그 사람에게 (상대 화면엔 알림도 뜸)
+  let lastSay = 0;
+  let sayTarget = null; // 말을 걸 사람 (💬 를 눌렀을 때 열려 있던 카드의 주인)
+  function sayPhrase(i, to = null, quiet = false) {
+    const f = myFish();
+    if (!f || !PHRASES[i]) return false;
+    const now = performance.now();
+    if (now - lastSay < 1300) {
+      if (!quiet) toast('천천히 한 마디씩 해 주세요 🐟');
+      return false;
+    }
+    lastSay = now;
+    f.say(PHRASES[i]);
+    live.send({ t: 'emote', kind: 'say', i, to });
+    return true;
+  }
+  function renderSayTo() {
+    const pid = sayTarget && online.has(sayTarget) ? sayTarget : null;
+    $('sayTo').textContent = pid
+      ? `${online.get(pid).name} 님에게 말하기`
+      : online.size
+        ? '내 물고기가 말해요 · 접속한 사람 물고기를 누르면 그 사람에게'
+        : '내 물고기가 말해요 · 다른 사람이 들어오면 함께 보여요';
+  }
+  $('sayList').append(
+    ...PHRASES.map((text, i) => {
+      const b = document.createElement('button');
+      b.textContent = text;
+      b.setAttribute('role', 'menuitem');
+      b.onclick = () => {
+        const to = sayTarget && online.has(sayTarget) ? sayTarget : null;
+        if (!sayPhrase(i, to)) return;
+        sfx.bubble();
+        buzz(10);
+        if (to) toast(`💬 ${online.get(to)?.name} 님에게 말했어요`);
+        showSay(false);
+      };
+      return b;
+    }),
+  );
+  // 휴대폰에선 카드와 겹치므로, 고르는 동안 카드는 잠깐 숨김 (받는 사람은 기억)
+  function showSay(on) {
+    if (on) sayTarget = $('wishCard').hidden ? null : cardPid();
+    document.body.classList.toggle('say-open', on);
+    $('sayPop').hidden = !on;
+    $('actSay').classList.toggle('on', on);
+    $('actSay').setAttribute('aria-expanded', String(on));
+    if (on) renderSayTo();
+  }
+  $('actSay').onclick = (e) => {
+    e.stopPropagation();
+    showSay($('sayPop').hidden);
+  };
+  document.addEventListener('pointerdown', (e) => {
+    if (!$('sayPop').hidden && !e.target.closest('#sayPop, #actSay')) showSay(false);
+  });
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && showSay(false));
+
   // ---------- 신고 ----------
   $('btnReport').onclick = async () => {
     const id = cardId;
