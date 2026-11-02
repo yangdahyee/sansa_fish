@@ -105,9 +105,9 @@ Cloudflare 와 똑같은 환경으로 돌려 보려면 `npm run cf:dev` → http
 2. **Workers & Pages → Create → Import a repository** → GitHub 연결 → `sansa_fish` 선택
 3. 설정
    - Project name: `wish-pond`
-   - Build command: `npm run build`
+   - Build command: 비워 둬도 됨 (`wrangler.jsonc` 의 `build` 가 배포 직전에 `npm run build` 로 three.js 를 `public/vendor` 에 복사)
    - Deploy command: `npx wrangler deploy`
-   - 브랜치: 배포할 브랜치 (보통 `main`)
+   - 브랜치(Production branch): 실제로 고친 코드가 올라가 있는 브랜치. 다른 브랜치에 푸시한 건 미리보기로만 올라가거나 아예 배포되지 않음
 4. **Save and Deploy** → `https://wish-pond.<내 하위 도메인>.workers.dev` 주소가 생김. 이후 그 브랜치에 푸시할 때마다 자동 배포
 5. **관리자 비밀번호 넣기**: 프로젝트 → **Settings → Variables and Secrets → Add** → Type **Secret**, Name `ADMIN_TOKEN`, Value 에 길고 어려운 비밀번호 → **Deploy**. 이제 `https://…workers.dev/admin` 에서 로그인
 

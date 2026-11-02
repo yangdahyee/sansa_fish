@@ -3,7 +3,10 @@
   "name": "wish-pond",
   "main": "src/worker.js",
   "compatibility_date": "2025-10-01",
-  // 정적 파일은 public/ (배포 전 `npm run build` 가 three.js 를 public/vendor 로 복사)
+  // 배포(wrangler deploy)·미리보기(wrangler dev) 때마다 먼저 three.js 를 public/vendor 로 복사.
+  // public/vendor 는 git 에 없어서, 이게 없으면 Cloudflare 의 GitHub 연동 배포에서 화면이 '불러오는 중'에 멈춤
+  "build": { "command": "npm run build" },
+  // 정적 파일은 public/
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
