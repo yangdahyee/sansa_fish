@@ -1083,6 +1083,12 @@ class SkyFish {
     this.pivot = new THREE.Group();
     this.pivot.add(model);
     this.root.add(this.pivot);
+    // 이루어진 소원의 왕관: 머리 위에 살짝 뒤로 기울여
+    this.crown = world.makeCrown();
+    this.crown.position.set(0, src.size.y * k * 0.5 * 0.82, FISH_LEN * 0.16);
+    this.crown.rotation.x = -0.22;
+    this.crown.scale.setScalar(1.05);
+    this.pivot.add(this.crown);
     this.mixer = new THREE.AnimationMixer(model);
     if (src.clip) {
       const a = this.mixer.clipAction(src.clip);
@@ -1229,7 +1235,11 @@ class SkyFish {
     }
     this.pop = Math.max(0, this.pop - dt * 1.5);
     this.pivot.scale.setScalar(this.scaleNow * (1 + Math.sin(this.pop * Math.PI) * 0.25));
-    if (animate) this.mixer.update(dt * (0.8 + this.vel.length() * 0.6));
+    if (animate) {
+      this.mixer.update(dt * (0.8 + this.vel.length() * 0.6));
+      // 왕관이 가끔 반짝
+      if (Math.random() < dt * 0.5) this.world.spawnParticle(this.crown.getWorldPosition(tmpV2), 0xfff3c4, new THREE.Vector3(0, 0.4, 0), 0.6, 0.18, 0);
+    }
     this.updateSay();
   }
 
@@ -1892,6 +1902,7 @@ export class World {
       this.skyClouds.push(c);
     }
     this.buildCloudBridge(g, rockM);
+    this.buildSkyLights(g);
     this.scene.add(g);
   }
 
@@ -1929,39 +1940,186 @@ export class World {
     g.position.set(BRIDGE_X, 0, BRIDGE_Z);
     g.rotation.y = BRIDGE_ROT; // 다리 기준 좌표 (x=u, z=v)
     parent.add(g);
-    const puffG = new THREE.IcosahedronGeometry(1, 1);
-    const puffM = new THREE.MeshStandardMaterial({ color: 0xf4f6ff, emissive: 0x6d7aa8, emissiveIntensity: 0.45, roughness: 1, flatShading: true });
     const span = BRIDGE_SPAN;
-    const steps = 30;
-    const puffs = new THREE.InstancedMesh(puffG, puffM, (steps + 1) * 4);
+    const W = 1.8; // 다리 폭
+    const steps = 40;
+    const gold = this.goldMat();
+    const marble = new THREE.MeshStandardMaterial({ color: 0xf6f1e7, roughness: 0.32, metalness: 0.05, emissive: 0x2a2620 });
+    const marbleParts = [];
+    const goldParts = [];
+    const place = (geo, x, y, z, rz = 0) => {
+      geo.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, rz)), new THREE.Vector3(1, 1, 1)));
+      return geo;
+    };
+    // 대리석 바닥판 + 양옆 금 띠: 무지개처럼 휜 아치를 짧은 판으로 이어 붙임
+    for (let i = 0; i < steps; i++) {
+      const u0 = -span + (i / steps) * span * 2;
+      const u1 = -span + ((i + 1) / steps) * span * 2;
+      const y0 = bridgeY(u0);
+      const y1 = bridgeY(u1);
+      const len = Math.hypot(u1 - u0, y1 - y0) * 1.04;
+      const ang = Math.atan2(y1 - y0, u1 - u0);
+      const mx = (u0 + u1) / 2;
+      const my = (y0 + y1) / 2;
+      marbleParts.push(place(new THREE.BoxGeometry(len, 0.3, W), mx, my - 0.15, 0, ang));
+      for (const side of [-1, 1]) goldParts.push(place(new THREE.BoxGeometry(len, 0.1, 0.08), mx, my - 0.26, side * (W / 2 + 0.02), ang));
+    }
+    // 난간: 금 기둥 + 둥근 금 장식 + 이어지는 금 손잡이
+    const posts = 9;
+    for (let i = 0; i <= posts; i++) {
+      const u = -span + (i / posts) * span * 2;
+      const y = bridgeY(u);
+      for (const side of [-1, 1]) {
+        goldParts.push(place(new THREE.CylinderGeometry(0.05, 0.065, 0.8, 8), u, y + 0.4, side * (W / 2 - 0.08)));
+        goldParts.push(place(new THREE.SphereGeometry(0.1, 10, 8), u, y + 0.85, side * (W / 2 - 0.08)));
+      }
+    }
+    for (const side of [-1, 1]) {
+      const pts = [];
+      for (let i = 0; i <= 24; i++) {
+        const u = -span + (i / 24) * span * 2;
+        pts.push(new THREE.Vector3(u, bridgeY(u) + 0.72, side * (W / 2 - 0.08)));
+      }
+      goldParts.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 60, 0.035, 6, false));
+    }
+    const deck = new THREE.Mesh(mergeGeometries(marbleParts.map((x) => x.toNonIndexed())), marble);
+    const trim = new THREE.Mesh(mergeGeometries(goldParts.map((x) => x.toNonIndexed())), gold);
+    g.add(deck, trim);
+    // 가운데 꼭대기: 금빛 보주
+    const orb = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), gold);
+    orb.position.set(0, bridgeY(0) + 1.05, 0);
+    g.add(orb);
+    const orbGlow = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd98a, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }),
+    );
+    orbGlow.scale.setScalar(2.4);
+    orbGlow.position.copy(orb.position);
+    g.add(orbGlow);
+    this.bridgeOrb = orbGlow;
+
+    // 다리를 받치는 구름: 바닥판 아래로 몽글몽글
+    const puffG = new THREE.IcosahedronGeometry(1, 1);
+    const puffM = new THREE.MeshStandardMaterial({ color: 0xf4f6ff, emissive: 0x6d7aa8, emissiveIntensity: 0.4, roughness: 1, flatShading: true });
+    const puffs = new THREE.InstancedMesh(puffG, puffM, (steps + 1) * 3);
     const m = new THREE.Matrix4();
     const q = new THREE.Quaternion();
     let k = 0;
     for (let i = 0; i <= steps; i++) {
       const x = -span + (i / steps) * span * 2;
       const y = bridgeY(x);
-      for (let j = 0; j < 4 && k < puffs.count; j++) {
-        const sc = rand(0.5, 0.8) * (j === 0 ? 1.15 : 1);
+      for (let j = 0; j < 3 && k < puffs.count; j++) {
+        const sc = rand(0.32, 0.55);
         q.setFromEuler(new THREE.Euler(rand(0, 3), rand(0, 3), rand(0, 3)));
-        m.compose(new THREE.Vector3(x + rand(-0.25, 0.25), y + rand(-0.12, 0.2) - (j === 3 ? 0.25 : 0), rand(-0.6, 0.6)), q, new THREE.Vector3(sc * 1.3, sc * 0.75, sc));
+        m.compose(new THREE.Vector3(x + rand(-0.2, 0.2), y - 0.62 - rand(0, 0.25), rand(-0.75, 0.75)), q, new THREE.Vector3(sc * 1.5, sc * 0.7, sc));
         puffs.setMatrixAt(k++, m);
       }
     }
     puffs.count = k;
     g.add(puffs);
+    // 기둥 위 등불
     this.bridgeLamps = [];
-    for (let i = 1; i < 7; i++) {
-      const x = -span + (i / 7) * span * 2;
+    for (let i = 0; i <= posts; i += 1) {
+      const u = -span + (i / posts) * span * 2;
       for (const side of [-1, 1]) {
         const s = new THREE.Sprite(
           new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd58a, transparent: true, opacity: 0.8, depthWrite: false, blending: THREE.AdditiveBlending }),
         );
-        s.scale.setScalar(0.9);
-        s.position.set(x, bridgeY(x) + 0.6, side * 0.65);
+        s.scale.setScalar(0.85);
+        s.position.set(u, bridgeY(u) + 0.86, side * (W / 2 - 0.08));
         s.userData.ph = rand(0, 6);
         g.add(s);
         this.bridgeLamps.push(s);
       }
+    }
+  }
+
+  // 금 (왕관·다리 난간·석등 장식이 함께 씀)
+  goldMat() {
+    this._gold ??= new THREE.MeshStandardMaterial({ color: 0xf0bf4c, metalness: 0.65, roughness: 0.28, emissive: 0x5a3a08 });
+    return this._gold;
+  }
+
+  // 왕관 하나 (모양은 모두 같이 씀): 금 테 + 뾰족한 다섯 봉우리 + 루비·사파이어
+  makeCrown() {
+    if (!this._crown) {
+      const parts = [new THREE.CylinderGeometry(0.17, 0.15, 0.1, 18)];
+      const gems = [];
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const c = new THREE.ConeGeometry(0.05, 0.15, 6);
+        c.translate(Math.cos(a) * 0.15, 0.12, Math.sin(a) * 0.15);
+        parts.push(c);
+        const ball = new THREE.SphereGeometry(0.03, 8, 6);
+        ball.translate(Math.cos(a) * 0.15, 0.205, Math.sin(a) * 0.15);
+        parts.push(ball);
+        const gem = new THREE.OctahedronGeometry(0.035, 0);
+        gem.translate(Math.cos(a + 0.63) * 0.168, 0, Math.sin(a + 0.63) * 0.168);
+        gems.push(gem);
+      }
+      const goldM = this.goldMat().clone();
+      addWaterTint(goldM, this.skyUnder, SKY_Y, 1.4);
+      const gemM = new THREE.MeshStandardMaterial({ color: 0xd0204a, emissive: 0x7a0a22, roughness: 0.15, metalness: 0.2 });
+      addWaterTint(gemM, this.skyUnder, SKY_Y, 1.4);
+      this._crown = {
+        gold: mergeGeometries(parts.map((x) => x.toNonIndexed())),
+        gems: mergeGeometries(gems.map((x) => x.toNonIndexed())),
+        goldM,
+        gemM,
+      };
+    }
+    const c = this._crown;
+    const g = new THREE.Group();
+    const a = new THREE.Mesh(c.gold, c.goldM);
+    const b = new THREE.Mesh(c.gems, c.gemM);
+    a.renderOrder = b.renderOrder = 2.5;
+    g.add(a, b);
+    return g;
+  }
+
+  // 하늘 연못 물가의 대리석 석등과 물 위에 떠다니는 연등
+  buildSkyLights(g) {
+    const stoneM = new THREE.MeshStandardMaterial({ color: 0xece6da, roughness: 0.5, emissive: 0x1e1b16 });
+    for (let i = 0; i < 6; i++) {
+      const a = -Math.PI / 2 + (i - 2.5) * 0.62; // 뒤쪽 물가를 따라 (앞에서 바라볼 때 보이게)
+      const L = makeStoneLantern(stoneM);
+      L.group.scale.setScalar(1.5);
+      L.group.position.set(Math.cos(a) * (SKY_RX + 1.2), 0.25, Math.sin(a) * (SKY_RZ + 1.2));
+      g.add(L.group);
+      const glow = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffb867, transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending }),
+      );
+      glow.scale.setScalar(3.4);
+      glow.position.copy(L.group.position).add(new THREE.Vector3(0, L.fireY * 1.5, 0));
+      glow.userData.ph = rand(0, 6);
+      g.add(glow);
+      this.bridgeLamps.push(glow);
+    }
+    // 연등: 연꽃 등 안에 작은 불, 물 위를 천천히 떠다님
+    this.skyLanterns = [];
+    for (let i = 0; i < 16; i++) {
+      let x = 0;
+      let z = 0;
+      for (let t = 0; t < 30; t++) {
+        x = rand(-SKY_RX, SKY_RX) * 0.8;
+        z = rand(-SKY_RZ, SKY_RZ) * 0.8;
+        if (insideSky(x, z, 4)) break;
+      }
+      const lan = new THREE.Group();
+      const fl = makeLotusFlower(1.25, i % 3 === 0 ? 0xffd27a : i % 3 === 1 ? 0xf78fb0 : 0xffffff);
+      lan.add(fl);
+      const flame = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffc86a }));
+      flame.position.y = 0.32;
+      lan.add(flame);
+      const glow = new THREE.Sprite(
+        new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffc070, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }),
+      );
+      glow.scale.setScalar(2.2);
+      glow.position.y = 0.35;
+      lan.add(glow);
+      lan.position.set(x, 0.04, z);
+      lan.userData = { ax: x, az: z, r: rand(0.6, 1.6), sp: rand(0.05, 0.12) * (Math.random() < 0.5 ? -1 : 1), ph: rand(0, 6), glow };
+      g.add(lan);
+      this.skyLanterns.push(lan);
     }
   }
 
@@ -3460,6 +3618,22 @@ export class World {
     }
     this.skyAura.material.opacity = 0.26 + Math.sin(time * 0.8) * 0.06;
     for (const L of this.bridgeLamps) L.material.opacity = 0.7 + Math.sin(time * 3 + L.userData.ph) * 0.2;
+    this.bridgeOrb.material.opacity = 0.6 + Math.sin(time * 1.7) * 0.2;
+    for (const lan of this.skyLanterns) {
+      const u = lan.userData;
+      const a = time * u.sp + u.ph;
+      lan.position.set(u.ax + Math.cos(a) * u.r, 0.04 + Math.sin(time * 1.4 + u.ph) * 0.03, u.az + Math.sin(a) * u.r);
+      lan.rotation.y = a * 0.5;
+      u.glow.material.opacity = 0.6 + Math.sin(time * 4 + u.ph) * 0.12;
+    }
+    // 하늘 연못을 보는 동안: 물 위로 금빛 반짝임이 피어오름
+    if (skyOn && Math.random() < dt * 7) {
+      const x = rand(-SKY_RX, SKY_RX) * 0.85;
+      const z = rand(-SKY_RZ, SKY_RZ) * 0.85;
+      if (insideSky(x, z, 1)) {
+        this.spawnParticle(tmpV2.set(SKY_X + x, SKY_Y + 0.1, SKY_Z + z), Math.random() < 0.6 ? 0xffd98a : 0xffffff, new THREE.Vector3(rand(-0.1, 0.1), rand(0.3, 0.7), rand(-0.1, 0.1)), rand(1.6, 2.6), rand(0.1, 0.2), 0.15);
+      }
+    }
     // 등용문에서 하늘 연못으로 올라가는 금빛 티끌 (위에 무언가 있다는 표시)
     if (Math.random() < dt * 2.2) {
       const from = tmpV2.set(rand(-1.2, 1.2), GATE_BASE_Y + rand(2.6, 3.4), GATE_Z - 0.3);
