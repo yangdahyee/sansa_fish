@@ -371,7 +371,8 @@ async function main() {
         buzz(15);
         toast(`💬 ${who?.name || '누군가'}: ${text}`);
       }
-    } else if (m.kind === 'swim') f?.doMove(m.move);
+    } else if (m.kind === 'sky') world.skySprinkle(m.p[0], m.p[1]); // 누군가 하늘 연못에 반짝이를 뿌림
+    else if (m.kind === 'swim') f?.doMove(m.move);
     else if (m.kind === 'goto') world.swimFishTo(f?.id, m.p);
   });
 
@@ -512,6 +513,15 @@ async function main() {
     lastGoto = now;
     live.send({ t: 'emote', kind: 'goto', p: [p.x, p.y, p.z].map((v) => Math.round(v * 100) / 100) });
   };
+  // 하늘 연못 빈 물을 누르면 반짝이 → 다른 사람 화면에도
+  let lastSkyTap = 0;
+  world.onSkyTap = (x, z) => {
+    sfx.bubble();
+    const now = performance.now();
+    if (now - lastSkyTap < 380) return;
+    lastSkyTap = now;
+    live.send({ t: 'emote', kind: 'sky', p: [Math.round(x * 100) / 100, Math.round(z * 100) / 100] });
+  };
   // 하늘 연못의 금빛 물고기를 누르면: 물고기 위에 소원 제목 + 카드
   world.onSkyFishClick = (w, f) => {
     const known = wishes.get(w.id) || myStars.find((x) => x.id === w.id) || w;
@@ -567,7 +577,12 @@ async function main() {
     if (!ceremonyBusy) world.setCinema(on); // 패널을 잠깐 숨기니 화면 한가운데로
     if (on) {
       closeCard();
-      caption(world.skyFish.size ? '금빛 물고기를 누르면 이루어진 소원이 보여요' : '아직 하늘 연못이 비어 있어요. 먹이 다섯 번이면 첫 물고기가 올라와요', 3800);
+      caption(
+        world.skyFish.size
+          ? '금빛 물고기를 누르면 소원이 보여요 · 물을 누르면 반짝이를 뿌려요'
+          : '아직 하늘 연못이 비어 있어요. 먹이 다섯 번이면 첫 물고기가 올라와요',
+        4200,
+      );
     }
   };
 
