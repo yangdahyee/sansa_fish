@@ -1084,7 +1084,7 @@ class SkyFish {
     this.sayTimer = setTimeout(() => {
       el.remove();
       if (this.sayEl === el) this.sayEl = null;
-    }, 5000);
+    }, 9000); // 긴 소원도 읽을 수 있게
   }
 
   dispose() {
