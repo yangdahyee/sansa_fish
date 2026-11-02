@@ -1280,9 +1280,22 @@ class SkyFish {
       tmpV2.y += 0.9;
       tmpV2.project(this.world.camera);
       const visible = tmpV2.z < 1 && Math.abs(tmpV2.x) < 1.1 && Math.abs(tmpV2.y) < 1.1;
-      this.sayEl.style.display = visible && this.world.skyView && !this.world.skyView.returning ? '' : 'none';
-      this.sayEl.style.left = `${(tmpV2.x * 0.5 + 0.5) * this.world.width}px`;
-      this.sayEl.style.top = `${(-tmpV2.y * 0.5 + 0.5) * this.world.height}px`;
+      const el = this.sayEl;
+      el.style.display = visible && this.world.skyView && !this.world.skyView.returning ? '' : 'none';
+      // 말풍선이 화면 밖으로 잘리지 않게: 좌우는 화면 안으로 밀고(꼬리는 물고기를 가리킴),
+      // 위쪽 메뉴에 가리면 물고기 아래로 뒤집음
+      const W = this.world.width;
+      const fx = (tmpV2.x * 0.5 + 0.5) * W;
+      const fy = (-tmpV2.y * 0.5 + 0.5) * this.world.height;
+      const bw = el.offsetWidth || 0;
+      const bh = el.offsetHeight || 0;
+      const pad = 12;
+      const cx = bw ? clamp(fx, bw / 2 + pad, W - bw / 2 - pad) : fx;
+      const below = fy - bh - 10 < 64;
+      el.classList.toggle('below', below);
+      el.style.left = `${cx}px`;
+      el.style.top = `${below ? fy + 46 : fy}px`;
+      el.style.setProperty('--tip', `${bw ? clamp(50 + ((fx - cx) / bw) * 100, 10, 90) : 50}%`);
     }
   }
 }

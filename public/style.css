@@ -553,10 +553,15 @@ body.say-open .fish-card { visibility: hidden; }
 
 /* ---------- 하늘 연못 ---------- */
 .say.sky {
-  max-width: min(320px, 80vw); white-space: normal; text-align: center; line-height: 1.4;
+  /* 화면 가장자리에서도 좁아지지 않게 글 길이만큼 (최대 폭까지), 한글은 단어 단위로 줄바꿈 */
+  width: max-content; max-width: min(300px, calc(100vw - 32px)); white-space: normal; word-break: keep-all; overflow-wrap: anywhere;
+  text-align: center; line-height: 1.45; font-size: 14px;
   background: linear-gradient(135deg, #fff6dc, #ffe2a6); color: #4a2a00; box-shadow: 0 6px 22px rgba(255, 190, 90, .45);
 }
-.say.sky::after { border-top-color: #ffe7b0; }
+.say.sky::after { border-top-color: #ffe7b0; left: var(--tip, 50%); }
+/* 화면 위쪽이라 물고기 아래로 뒤집혔을 때 꼬리도 위로 */
+.say.sky.below { transform: translate(-50%, 0); }
+.say.sky.below::after { bottom: auto; top: -6px; border-top: 0; border-bottom: 6px solid #fff6dc; }
 /* 하늘 연못을 보는 동안엔 아래 버튼 막대·말 고르기를 잠깐 숨김 */
 body.sky-view .action-bar, body.sky-view .say-pop, body.sky-view .bottom-bars, body.sky-view #panel, body.sky-view .mini-bar { opacity: 0; pointer-events: none; }
 body.sky-view #panel { transition: opacity .3s; }
