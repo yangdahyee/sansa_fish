@@ -1329,6 +1329,10 @@ async function main() {
   async function loadMine() {
     const mine = (await api('/api/wishes?mine=1&limit=50')).wishes;
     myWish = mine.find((w) => w.status === 'swimming') || null;
+    if (myWish?.name && myWish.name !== state.name) {
+      state.name = myWish.name; // 헤엄치는 내 소원이 있으면 그 물고기 이름 그대로
+      world.getFish(AVATAR)?.setData({ name: state.name });
+    }
     myStars = mine.filter((w) => w.status === 'star');
     renderPanel();
     return mine;
