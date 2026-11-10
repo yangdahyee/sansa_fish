@@ -255,10 +255,7 @@ async function main() {
       const r = await api('/api/name', { name });
       state.name = r.name;
       save();
-      if (myWish) myWish = { ...myWish, name: r.name };
-      myStars = myStars.map((w) => ({ ...w, name: r.name }));
-      for (const w of wishes.values()) if (w.mine) w.name = r.name;
-      if (myWish) world.getFish(myWish.id)?.setData({ name: r.name });
+      // 이미 띄운 소원의 이름은 그대로 (같이 바뀌면 같은 사람인 게 드러나니까)
       world.getFish(AVATAR)?.setData({ name: r.name });
       renderPanel();
       sendHello(); // 다른 사람 화면의 이름표도
@@ -310,7 +307,7 @@ async function main() {
       const wf = u.wishId && world.getFish(u.wishId);
       if (wf) {
         onlineWish.add(u.wishId);
-        wf.setData({ online: true, name: u.name });
+        wf.setData({ online: true }); // 소원 물고기 이름표는 소원을 띄울 때 이름 그대로
         if (world.getFish(`p:${pid}`)) world.removeFish(`p:${pid}`);
       } else {
         const id = `p:${pid}`;
@@ -1297,14 +1294,6 @@ async function main() {
     if (cardId === id) openCard(w);
   });
   live.on('wish:hide', ({ id }) => dropWish(id));
-  // 누군가 이름을 바꿈 → 그 사람 소원 물고기의 이름표도
-  live.on('wish:name', ({ id, name }) => {
-    const w = wishes.get(id);
-    if (w) w.name = name;
-    world.getFish(id)?.setData({ name });
-    const sf = world.getSkyFish(id);
-    if (sf) sf.data.name = name;
-  });
   live.on('wish:star', ({ wish }) => {
     const known = wishes.get(wish.id);
     onStar({ ...known, ...wish, mine: known?.mine || myWish?.id === wish.id });
@@ -1329,10 +1318,6 @@ async function main() {
   async function loadMine() {
     const mine = (await api('/api/wishes?mine=1&limit=50')).wishes;
     myWish = mine.find((w) => w.status === 'swimming') || null;
-    if (myWish?.name && myWish.name !== state.name) {
-      state.name = myWish.name; // 헤엄치는 내 소원이 있으면 그 물고기 이름 그대로
-      world.getFish(AVATAR)?.setData({ name: state.name });
-    }
     myStars = mine.filter((w) => w.status === 'star');
     renderPanel();
     return mine;

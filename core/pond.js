@@ -283,7 +283,7 @@ export class Pond {
       return json(200, { goal: this.goal, wish: this.view(w, who), becameStar });
     }
 
-    // 내 이름 바꾸기: 거르기 통과하면 내 소원들(헤엄치는·이루어진)의 이름도 함께 바꿈
+    // 내 이름 바꾸기: 거르기만 함. 이미 띄운 소원들의 이름은 그대로 둠 (익명이 지켜지게)
     if (p === '/api/name' && method === 'POST') {
       const who = await hashUid(body.uid);
       if (!who) return json(400, { error: 'bad_uid' });
@@ -291,12 +291,6 @@ export class Pond {
       if (!name) return json(400, { error: 'empty' });
       if (checkText(name)) return json(400, { error: 'bad_name' });
       if (this.limited(`n:${who}`, 20, 3600 * 1000) || this.limited(`ni:${ip}`, 200, 3600 * 1000)) return json(429, { error: 'too_many' });
-      for (const w of this.wishes) {
-        if (w.owner !== who || w.name === name) continue;
-        w.name = name;
-        await this.persist(w);
-        if (!w.hidden) this.broadcast({ t: 'wish:name', id: w.id, name });
-      }
       return json(200, { ok: true, name });
     }
 
